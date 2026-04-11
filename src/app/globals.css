@@ -1,3 +1,8 @@
+/* ============================================
+   BIT Brand Anarchy — Theme Variables
+   Replace :root values when brand assets arrive
+   ============================================ */
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
