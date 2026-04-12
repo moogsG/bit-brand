@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "PORT=6969 next dev",
     "dev:scheduler": "tsx scripts/dev-scheduler.ts",
     "build": "next build",
     "start": "next start",

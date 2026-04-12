@@ -10,6 +10,8 @@ import {
   FileText,
   Sparkles,
   LogOut,
+  MessageCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { themeConfig } from "@/lib/theme.config";
@@ -68,6 +70,18 @@ function PortalSidebarInner({
       matchHref: `${base}/ai-visibility`,
       label: "AI Visibility",
       icon: Sparkles,
+    },
+    {
+      href: `${base}/approvals${impersonateParam}`,
+      matchHref: `${base}/approvals`,
+      label: "Approvals",
+      icon: ShieldCheck,
+    },
+    {
+      href: `${base}/messages${impersonateParam}`,
+      matchHref: `${base}/messages`,
+      label: "Messages",
+      icon: MessageCircle,
     },
   ];
 

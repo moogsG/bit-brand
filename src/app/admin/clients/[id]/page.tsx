@@ -8,6 +8,9 @@ import { ClientStatusBadge } from "@/components/admin/client-status-badge";
 import { DataSourceForm } from "@/components/admin/data-source-form";
 import { InviteUserDialog } from "@/components/admin/invite-user-dialog";
 import { SyncControls } from "@/components/admin/sync-controls";
+import { KanbanBoard } from "@/components/admin/kanban-board";
+import { ClientApprovalsList } from "@/components/admin/client-approvals-list";
+import { MessagesThread } from "@/components/portal/messages-thread";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth } from "@/lib/auth";
@@ -15,10 +18,14 @@ import { db } from "@/lib/db";
 import {
 	clients,
 	clientUsers,
-	dataSources,
-	invitations,
-	syncJobs,
-	users,
+		dataSources,
+		invitations,
+		syncJobs,
+		users,
+		tasks,
+		kanbanColumns,
+		approvals,
+		clientMessages,
 } from "@/lib/db/schema";
 
 interface PageProps {
@@ -48,38 +55,68 @@ export default async function ClientDetailPage({
 	if (!client) notFound();
 
 	// Fetch related data in parallel
-	const [clientUserRows, invitationRows, dataSourceRows, recentSyncJobs] =
-		await Promise.all([
-			db
-				.select({
-					id: clientUsers.id,
-					userId: clientUsers.userId,
-					createdAt: clientUsers.createdAt,
-					userName: users.name,
-					userEmail: users.email,
-				})
-				.from(clientUsers)
-				.innerJoin(users, eq(clientUsers.userId, users.id))
-				.where(eq(clientUsers.clientId, id)),
-			db
-				.select()
-				.from(invitations)
-				.where(eq(invitations.clientId, id))
-				.orderBy(),
-			db.select().from(dataSources).where(eq(dataSources.clientId, id)),
-			db
-				.select()
-				.from(syncJobs)
-				.where(eq(syncJobs.clientId, id))
-				.orderBy(desc(syncJobs.createdAt))
-				.limit(20)
-				.all(),
-		]);
+	const [
+		clientUserRows,
+		invitationRows,
+		dataSourceRows,
+		recentSyncJobs,
+		clientTasks,
+		clientKanbanColumns,
+		clientApprovals,
+		messages,
+	] = await Promise.all([
+		db
+			.select({
+				id: clientUsers.id,
+				userId: clientUsers.userId,
+				createdAt: clientUsers.createdAt,
+				userName: users.name,
+				userEmail: users.email,
+			})
+			.from(clientUsers)
+			.innerJoin(users, eq(clientUsers.userId, users.id))
+			.where(eq(clientUsers.clientId, id)),
+		db
+			.select()
+			.from(invitations)
+			.where(eq(invitations.clientId, id))
+			.orderBy(),
+		db.select().from(dataSources).where(eq(dataSources.clientId, id)),
+		db
+			.select()
+			.from(syncJobs)
+			.where(eq(syncJobs.clientId, id))
+			.orderBy(desc(syncJobs.createdAt))
+			.limit(20)
+			.all(),
+		db.select().from(tasks).where(eq(tasks.clientId, id)).all(),
+		db
+			.select()
+			.from(kanbanColumns)
+			.where(eq(kanbanColumns.clientId, id))
+			.all(),
+		db
+			.select()
+			.from(approvals)
+			.where(eq(approvals.clientId, id))
+			.orderBy(desc(approvals.createdAt))
+			.all(),
+		db
+			.select()
+			.from(clientMessages)
+			.where(eq(clientMessages.clientId, id))
+			.orderBy(desc(clientMessages.createdAt))
+			.limit(200)
+			.all(),
+	]);
 
 	const tabs = [
 		"overview",
 		"data-sources",
 		"sync",
+		"tasks",
+		"approvals",
+		"messages",
 		"users",
 		"invitations",
 	] as const;
@@ -90,6 +127,9 @@ export default async function ClientDetailPage({
 		overview: "Overview",
 		"data-sources": "Data Sources",
 		sync: "Sync",
+		tasks: "Tasks",
+		approvals: "Approvals",
+		messages: "Messages",
 		users: "Users",
 		invitations: "Invitations",
 	};
@@ -143,20 +183,16 @@ export default async function ClientDetailPage({
 									: "—"}
 							</p>
 						</div>
-						<div className="flex-shrink-0">
-							<Link
-								href={`/portal/${client.slug}/dashboard?impersonate=true`}
-								className={buttonVariants({
-									variant: "outline",
-									size: "sm",
-									className: "gap-2",
-								})}
-							>
-								<Eye className="h-4 w-4" />
-								Preview Portal
-							</Link>
-						</div>
-					</div>
+				<div className="flex-shrink-0">
+					<Link
+						href={`/portal/${client.slug}/dashboard?impersonate=true`}
+						className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+					>
+						<Eye className="h-4 w-4" />
+						Preview Portal
+					</Link>
+				</div>
+			</div>
 				</div>
 
 				{/* Tabs */}
@@ -220,6 +256,28 @@ export default async function ClientDetailPage({
 						clientId={id}
 						dataSources={dataSourceRows}
 						recentJobs={recentSyncJobs}
+					/>
+				)}
+
+				{activeTab === "tasks" && (
+					<div className="space-y-4">
+						<KanbanBoard
+							columns={clientKanbanColumns}
+							tasks={clientTasks}
+							clientId={id}
+						/>
+					</div>
+				)}
+
+				{activeTab === "approvals" && (
+					<ClientApprovalsList approvals={clientApprovals} />
+				)}
+
+				{activeTab === "messages" && (
+					<MessagesThread
+						messages={messages}
+						clientId={id}
+						currentRole="ADMIN"
 					/>
 				)}
 

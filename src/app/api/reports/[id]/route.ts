@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { monthlyReports, clients, clientUsers, users } from "@/lib/db/schema";
+import {
+	monthlyReports,
+	clients,
+	clientUsers,
+	users,
+	auditLogs,
+} from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendReportPublishedEmail } from "@/lib/email";
+import {
+	requiresApproval,
+	createApprovalRequest,
+	hasPendingApproval,
+	getApprovalStatus,
+} from "@/lib/approvals";
+import type { NewAuditLog } from "@/lib/db/schema";
 
 const updateReportSchema = z.object({
   sections: z.record(z.string(), z.unknown()).optional(),
@@ -61,11 +74,76 @@ export async function PATCH(
     if (parsed.sections !== undefined) {
       updateData.sections = JSON.stringify(parsed.sections);
     }
-    if (parsed.status !== undefined) {
-      updateData.status = parsed.status;
-      if (parsed.status === "PUBLISHED") {
+
+    // Check if publishing requires approval
+    if (parsed.status === "PUBLISHED") {
+      const report = await db
+        .select()
+        .from(monthlyReports)
+        .where(eq(monthlyReports.id, id))
+        .get();
+
+      if (!report) {
+        return NextResponse.json({ error: "Report not found" }, { status: 404 });
+      }
+
+      const needsApproval = await requiresApproval("REPORT", "PUBLISH");
+
+      if (needsApproval) {
+        // Check if already approved
+        const approvalStatus = await getApprovalStatus("REPORT", id);
+
+        if (approvalStatus === "PENDING") {
+          return NextResponse.json(
+            { error: "Approval pending for this report" },
+            { status: 400 },
+          );
+        }
+
+        if (approvalStatus === "NONE" || approvalStatus === "REJECTED") {
+          // Create approval request instead of publishing directly
+          const approvalId = await createApprovalRequest({
+            policyName: "report_publish",
+            resourceType: "REPORT",
+            resourceId: id,
+            clientId: report.clientId,
+            requestedBy: session.user.id,
+            metadata: { title: report.title },
+          });
+
+          // Audit log
+          const auditEntry: NewAuditLog = {
+            userId: session.user.id,
+            action: "REQUEST_APPROVAL",
+            resourceType: "REPORT",
+            resourceId: id,
+            clientId: report.clientId,
+            changes: JSON.stringify({ approvalId }),
+          };
+          await db.insert(auditLogs).values(auditEntry);
+
+          return NextResponse.json(
+            {
+              message: "Approval request created",
+              approvalId,
+              requiresApproval: true,
+            },
+            { status: 202 },
+          );
+        }
+
+        // If approved, proceed with publishing
+        if (approvalStatus === "APPROVED") {
+          updateData.status = parsed.status;
+          updateData.publishedAt = new Date();
+        }
+      } else {
+        // No approval required, publish directly
+        updateData.status = parsed.status;
         updateData.publishedAt = new Date();
       }
+    } else if (parsed.status !== undefined) {
+      updateData.status = parsed.status;
     }
 
     const [updated] = await db

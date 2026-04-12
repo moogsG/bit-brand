@@ -431,6 +431,275 @@ export const aiVisibility = sqliteTable(
 	(t) => [uniqueIndex("ai_visibility_client_date_idx").on(t.clientId, t.date)],
 );
 
+// ─── Roles (RBAC) ────────────────────────────────────────────────────────────
+
+export const roles = sqliteTable("roles", {
+	id: text("id")
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	name: text("name").notNull().unique(), // e.g. "MARKETING_LEAD", "SEO_SPECIALIST"
+	description: text("description"),
+	permissions: text("permissions").notNull().default("[]"), // JSON array of permission strings
+	isSystem: integer("is_system", { mode: "boolean" }).notNull().default(false), // true for built-in roles
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.notNull()
+		.default(sql`(unixepoch())`),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.default(sql`(unixepoch())`),
+});
+
+// ─── Role Assignments (scoped to org/client) ─────────────────────────────────
+
+export const roleAssignments = sqliteTable(
+	"role_assignments",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		roleId: text("role_id")
+			.notNull()
+			.references(() => roles.id, { onDelete: "cascade" }),
+		// Scope: null = global, clientId = client-specific
+		clientId: text("client_id").references(() => clients.id, {
+			onDelete: "cascade",
+		}),
+		assignedBy: text("assigned_by")
+			.notNull()
+			.references(() => users.id),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(t) => [
+		uniqueIndex("unique_user_role_scope").on(t.userId, t.roleId, t.clientId),
+	],
+);
+
+// ─── Approval Policies ───────────────────────────────────────────────────────
+
+export const approvalPolicies = sqliteTable("approval_policies", {
+	id: text("id")
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	name: text("name").notNull().unique(), // e.g. "report_publish"
+	description: text("description"),
+	resourceType: text("resource_type").notNull(), // "REPORT", "STRATEGY", etc.
+	action: text("action").notNull(), // "PUBLISH", "ARCHIVE", etc.
+	requiredRoles: text("required_roles").notNull().default("[]"), // JSON array of role names
+	isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.notNull()
+		.default(sql`(unixepoch())`),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.default(sql`(unixepoch())`),
+});
+
+// ─── Approvals ───────────────────────────────────────────────────────────────
+
+export const approvals = sqliteTable(
+	"approvals",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		policyId: text("policy_id")
+			.notNull()
+			.references(() => approvalPolicies.id),
+		resourceType: text("resource_type").notNull(),
+		resourceId: text("resource_id").notNull(), // ID of the report/strategy/etc.
+		clientId: text("client_id")
+			.notNull()
+			.references(() => clients.id, { onDelete: "cascade" }),
+		requestedBy: text("requested_by")
+			.notNull()
+			.references(() => users.id),
+		status: text("status", {
+			enum: ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+		})
+			.notNull()
+			.default("PENDING"),
+		approvedBy: text("approved_by").references(() => users.id),
+		approvedAt: integer("approved_at", { mode: "timestamp" }),
+		rejectedBy: text("rejected_by").references(() => users.id),
+		rejectedAt: integer("rejected_at", { mode: "timestamp" }),
+		rejectionReason: text("rejection_reason"),
+		metadata: text("metadata").default("{}"), // JSON for additional context
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(t) => [
+		index("approvals_status_idx").on(t.status),
+		index("approvals_resource_idx").on(t.resourceType, t.resourceId),
+		index("approvals_client_idx").on(t.clientId),
+	],
+);
+
+// ─── Revision Requests ───────────────────────────────────────────────────────
+
+export const revisionRequests = sqliteTable("revision_requests", {
+	id: text("id")
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	approvalId: text("approval_id")
+		.notNull()
+		.references(() => approvals.id, { onDelete: "cascade" }),
+	requestedBy: text("requested_by")
+		.notNull()
+		.references(() => users.id),
+	reason: text("reason").notNull(),
+	suggestions: text("suggestions"), // Optional improvement suggestions
+	status: text("status", { enum: ["OPEN", "ADDRESSED", "DISMISSED"] })
+		.notNull()
+		.default("OPEN"),
+	addressedBy: text("addressed_by").references(() => users.id),
+	addressedAt: integer("addressed_at", { mode: "timestamp" }),
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.notNull()
+		.default(sql`(unixepoch())`),
+});
+
+// ─── Audit Logs (append-only) ────────────────────────────────────────────────
+
+export const auditLogs = sqliteTable(
+	"audit_logs",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		userId: text("user_id").references(() => users.id), // null for system actions
+		action: text("action").notNull(), // "CREATE", "UPDATE", "DELETE", "APPROVE", etc.
+		resourceType: text("resource_type").notNull(),
+		resourceId: text("resource_id").notNull(),
+		clientId: text("client_id").references(() => clients.id, {
+			onDelete: "cascade",
+		}),
+		changes: text("changes").default("{}"), // JSON snapshot of changes
+		ipAddress: text("ip_address"),
+		userAgent: text("user_agent"),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(t) => [
+		index("audit_logs_user_idx").on(t.userId),
+		index("audit_logs_resource_idx").on(t.resourceType, t.resourceId),
+		index("audit_logs_client_idx").on(t.clientId),
+		index("audit_logs_created_idx").on(t.createdAt),
+	],
+);
+
+// ─── Kanban Columns ──────────────────────────────────────────────────────────
+
+export const kanbanColumns = sqliteTable(
+	"kanban_columns",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		clientId: text("client_id")
+			.notNull()
+			.references(() => clients.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		position: integer("position").notNull().default(0),
+		color: text("color"), // hex color for visual distinction
+		isDefault: integer("is_default", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(t) => [index("kanban_columns_client_position_idx").on(t.clientId, t.position)],
+);
+
+// ─── Client Messages (two-way messaging) ─────────────────────────────────────
+
+export const clientMessages = sqliteTable(
+	"client_messages",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		clientId: text("client_id")
+			.notNull()
+			.references(() => clients.id, { onDelete: "cascade" }),
+		senderId: text("sender_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		senderRole: text("sender_role", { enum: ["ADMIN", "CLIENT"] })
+			.notNull()
+			.default("CLIENT"),
+		body: text("body").notNull(),
+		readAt: integer("read_at", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(t) => [
+		index("client_messages_client_idx").on(t.clientId, t.createdAt),
+		index("client_messages_sender_idx").on(t.senderId),
+	],
+);
+
+// ─── Tasks ───────────────────────────────────────────────────────────────────
+
+export const tasks = sqliteTable(
+	"tasks",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		clientId: text("client_id")
+			.notNull()
+			.references(() => clients.id, { onDelete: "cascade" }),
+		title: text("title").notNull(),
+		description: text("description"),
+		status: text("status", {
+			enum: ["TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"],
+		})
+			.notNull()
+			.default("TODO"),
+		priority: text("priority", { enum: ["LOW", "MEDIUM", "HIGH", "URGENT"] })
+			.notNull()
+			.default("MEDIUM"),
+		assignedTo: text("assigned_to").references(() => users.id),
+		createdBy: text("created_by")
+			.notNull()
+			.references(() => users.id),
+		dueDate: integer("due_date", { mode: "timestamp" }),
+		completedAt: integer("completed_at", { mode: "timestamp" }),
+		kanbanColumnId: text("kanban_column_id").references(
+			() => kanbanColumns.id,
+			{ onDelete: "set null" },
+		),
+		position: integer("position").notNull().default(0), // for ordering within column
+		tags: text("tags").default("[]"), // JSON array
+		linkedResourceType: text("linked_resource_type"), // "REPORT", "STRATEGY", etc.
+		linkedResourceId: text("linked_resource_id"),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.default(sql`(unixepoch())`),
+	},
+	(t) => [
+		index("tasks_client_idx").on(t.clientId),
+		index("tasks_assigned_idx").on(t.assignedTo),
+		index("tasks_status_idx").on(t.status),
+		index("tasks_column_position_idx").on(t.kanbanColumnId, t.position),
+	],
+);
+
 // ─── Type Exports ─────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
@@ -452,3 +721,25 @@ export type SyncJob = typeof syncJobs.$inferSelect;
 export type NewSyncJob = typeof syncJobs.$inferInsert;
 export type MozMetric = typeof mozMetrics.$inferSelect;
 export type NewMozMetric = typeof mozMetrics.$inferInsert;
+
+// RBAC & Approvals
+export type Role = typeof roles.$inferSelect;
+export type NewRole = typeof roles.$inferInsert;
+export type RoleAssignment = typeof roleAssignments.$inferSelect;
+export type NewRoleAssignment = typeof roleAssignments.$inferInsert;
+export type ApprovalPolicy = typeof approvalPolicies.$inferSelect;
+export type NewApprovalPolicy = typeof approvalPolicies.$inferInsert;
+export type Approval = typeof approvals.$inferSelect;
+export type NewApproval = typeof approvals.$inferInsert;
+export type RevisionRequest = typeof revisionRequests.$inferSelect;
+export type NewRevisionRequest = typeof revisionRequests.$inferInsert;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type NewAuditLog = typeof auditLogs.$inferInsert;
+
+// Tasks & Kanban
+export type Task = typeof tasks.$inferSelect;
+export type NewTask = typeof tasks.$inferInsert;
+export type KanbanColumn = typeof kanbanColumns.$inferSelect;
+export type NewKanbanColumn = typeof kanbanColumns.$inferInsert;
+export type ClientMessage = typeof clientMessages.$inferSelect;
+export type NewClientMessage = typeof clientMessages.$inferInsert;

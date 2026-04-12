@@ -1,7 +1,11 @@
+import { loadEnvConfig } from "@next/env";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { encrypt } from "@/lib/crypto";
 import { db } from "./index";
+
+// Ensure environment variables from .env.local are loaded when running via tsx
+loadEnvConfig(process.cwd());
 import {
 	aiVisibility,
 	apiCredentials,
@@ -17,6 +21,9 @@ import {
 	seoStrategies,
 	syncJobs,
 	users,
+	roles,
+	approvalPolicies,
+	kanbanColumns,
 } from "./schema";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -987,10 +994,121 @@ async function seed() {
 	await seedAIVisibility(client.id);
 	await seedRankscale(client.id);
 
+	// Seed RBAC & Approvals
+	await seedRoles();
+	await seedApprovalPolicies();
+	await seedDefaultKanbanColumns(client.id);
+
 	console.log("\n✅ Seed complete!\n");
 	console.log("  Admin:  admin@bitbrandanarchy.com / admin123!");
 	console.log("  Client: client@acmecorp.com / client123!");
 	console.log("  Portal: /portal/acme-corp/dashboard\n");
+}
+
+// ─── RBAC & Approvals ────────────────────────────────────────────────────────
+
+async function seedRoles() {
+	const defaultRoles = [
+		{
+			name: "MARKETING_LEAD",
+			description: "Marketing team lead with approval authority",
+			permissions: JSON.stringify([
+				"approve_reports",
+				"approve_strategies",
+				"manage_tasks",
+			]),
+			isSystem: true,
+		},
+		{
+			name: "SEO_SPECIALIST",
+			description: "SEO specialist with content creation rights",
+			permissions: JSON.stringify([
+				"create_reports",
+				"create_strategies",
+				"manage_keywords",
+			]),
+			isSystem: true,
+		},
+		{
+			name: "CONTENT_WRITER",
+			description: "Content writer with limited permissions",
+			permissions: JSON.stringify(["create_drafts", "view_reports"]),
+			isSystem: true,
+		},
+	];
+
+	for (const role of defaultRoles) {
+		const existing = await db
+			.select()
+			.from(roles)
+			.where(eq(roles.name, role.name))
+			.get();
+
+		if (!existing) {
+			await db.insert(roles).values(role);
+			console.log(`✅ Created role: ${role.name}`);
+		}
+	}
+}
+
+async function seedApprovalPolicies() {
+	const defaultPolicies = [
+		{
+			name: "report_publish",
+			description: "Approval required to publish monthly reports",
+			resourceType: "REPORT",
+			action: "PUBLISH",
+			requiredRoles: JSON.stringify(["MARKETING_LEAD", "ADMIN"]),
+			isActive: true,
+		},
+		{
+			name: "strategy_publish",
+			description: "Approval required to publish SEO strategies",
+			resourceType: "STRATEGY",
+			action: "PUBLISH",
+			requiredRoles: JSON.stringify(["MARKETING_LEAD", "ADMIN"]),
+			isActive: true,
+		},
+	];
+
+	for (const policy of defaultPolicies) {
+		const existing = await db
+			.select()
+			.from(approvalPolicies)
+			.where(eq(approvalPolicies.name, policy.name))
+			.get();
+
+		if (!existing) {
+			await db.insert(approvalPolicies).values(policy);
+			console.log(`✅ Created approval policy: ${policy.name}`);
+		}
+	}
+}
+
+async function seedDefaultKanbanColumns(clientId: string) {
+	const defaultColumns = [
+		{ name: "Backlog", position: 0, color: "#94a3b8", isDefault: true },
+		{ name: "To Do", position: 1, color: "#60a5fa", isDefault: false },
+		{ name: "In Progress", position: 2, color: "#fbbf24", isDefault: false },
+		{ name: "Review", position: 3, color: "#a78bfa", isDefault: false },
+		{ name: "Done", position: 4, color: "#34d399", isDefault: false },
+	];
+
+	const existing = await db
+		.select()
+		.from(kanbanColumns)
+		.where(eq(kanbanColumns.clientId, clientId))
+		.all();
+
+	if (existing.length === 0) {
+		for (const col of defaultColumns) {
+			await db.insert(kanbanColumns).values({
+				clientId,
+				...col,
+			});
+		}
+		console.log(`✅ Created default kanban columns for client`);
+	}
 }
 
 seed().catch((err) => {

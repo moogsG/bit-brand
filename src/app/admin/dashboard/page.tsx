@@ -2,15 +2,23 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { clients, users, invitations } from "@/lib/db/schema";
+import {
+	clients,
+	users,
+	invitations,
+	approvals,
+	tasks,
+} from "@/lib/db/schema";
 import { eq, count, desc, and, isNull } from "drizzle-orm";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { ClientStatusBadge } from "@/components/admin/client-status-badge";
+import { PendingApprovalsCard } from "@/components/admin/pending-approvals-card";
+import { MyTasksCard } from "@/components/admin/my-tasks-card";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
 } from "@/components/ui/card";
 import { Users, Building2, Mail, Activity } from "lucide-react";
 
@@ -27,9 +35,15 @@ export default async function AdminDashboardPage() {
     pendingInvitesResult,
     totalPortalUsersResult,
     recentClients,
+    pendingApprovals,
+    myTasks,
   ] = await Promise.all([
     db.select({ count: count() }).from(clients).get(),
-    db.select({ count: count() }).from(clients).where(eq(clients.isActive, true)).get(),
+    db
+      .select({ count: count() })
+      .from(clients)
+      .where(eq(clients.isActive, true))
+      .get(),
     db
       .select({ count: count() })
       .from(invitations)
@@ -40,11 +54,21 @@ export default async function AdminDashboardPage() {
       .from(users)
       .where(eq(users.role, "CLIENT"))
       .get(),
+    db.select().from(clients).orderBy(desc(clients.createdAt)).limit(5),
     db
       .select()
-      .from(clients)
-      .orderBy(desc(clients.createdAt))
-      .limit(5),
+      .from(approvals)
+      .where(eq(approvals.status, "PENDING"))
+      .orderBy(desc(approvals.createdAt))
+      .limit(10)
+      .all(),
+    db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.assignedTo, session.user.id))
+      .orderBy(desc(tasks.createdAt))
+      .limit(10)
+      .all(),
   ]);
 
   const stats = [
@@ -98,6 +122,12 @@ export default async function AdminDashboardPage() {
           ))}
         </div>
 
+        {/* Approvals & Tasks Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <PendingApprovalsCard approvals={pendingApprovals} />
+          <MyTasksCard tasks={myTasks} userId={session.user.id} />
+        </div>
+
         {/* Recent Clients */}
         <Card>
           <CardHeader>
@@ -115,7 +145,10 @@ export default async function AdminDashboardPage() {
             {recentClients.length === 0 ? (
               <div className="py-8 text-center text-muted-foreground text-sm px-4">
                 No clients yet.{" "}
-                <Link href="/admin/clients" className="underline hover:text-foreground">
+                <Link
+                  href="/admin/clients"
+                  className="underline hover:text-foreground"
+                >
                   Add your first client.
                 </Link>
               </div>
