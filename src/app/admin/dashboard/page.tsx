@@ -79,39 +79,48 @@ export default async function AdminDashboardPage() {
       const [pendingApprovalsCount, criticalTasksCount, unreadMessagesCount] =
         await Promise.all([
           // Pending approvals for this client
-          db
-            .select({ count: count() })
-            .from(approvals)
-            .where(
-              and(eq(approvals.clientId, clientId), eq(approvals.status, "PENDING"))
-            )
-            .get()
-            .then((r) => r?.count ?? 0),
+          (async () => {
+            const row = await db
+              .select({ count: count() })
+              .from(approvals)
+              .where(
+                and(
+                  eq(approvals.clientId, clientId),
+                  eq(approvals.status, "PENDING"),
+                ),
+              )
+              .get();
+            return row?.count ?? 0;
+          })(),
           // Critical tasks: BLOCKED status or URGENT priority
-          db
-            .select({ count: count() })
-            .from(tasks)
-            .where(
-              and(
-                eq(tasks.clientId, clientId),
-                or(eq(tasks.status, "BLOCKED"), eq(tasks.priority, "URGENT"))
+          (async () => {
+            const row = await db
+              .select({ count: count() })
+              .from(tasks)
+              .where(
+                and(
+                  eq(tasks.clientId, clientId),
+                  or(eq(tasks.status, "BLOCKED"), eq(tasks.priority, "URGENT")),
+                ),
               )
-            )
-            .get()
-            .then((r) => r?.count ?? 0),
+              .get();
+            return row?.count ?? 0;
+          })(),
           // Unread messages from client (sender_role = CLIENT, readAt is null)
-          db
-            .select({ count: count() })
-            .from(clientMessages)
-            .where(
-              and(
-                eq(clientMessages.clientId, clientId),
-                eq(clientMessages.senderRole, "CLIENT"),
-                isNull(clientMessages.readAt)
+          (async () => {
+            const row = await db
+              .select({ count: count() })
+              .from(clientMessages)
+              .where(
+                and(
+                  eq(clientMessages.clientId, clientId),
+                  eq(clientMessages.senderRole, "CLIENT"),
+                  isNull(clientMessages.readAt),
+                ),
               )
-            )
-            .get()
-            .then((r) => r?.count ?? 0),
+              .get();
+            return row?.count ?? 0;
+          })(),
         ]);
 
       return {
