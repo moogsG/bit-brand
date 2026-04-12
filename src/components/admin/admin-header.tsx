@@ -8,7 +8,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -40,10 +39,10 @@ export function AdminHeader({ title }: AdminHeaderProps) {
           <span className="text-sm font-medium hidden sm:block">{name}</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" side="bottom" sideOffset={8}>
-          <DropdownMenuLabel className="flex items-center gap-2 px-2 py-1.5">
+          <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
             <User className="h-3.5 w-3.5" />
             {name}
-          </DropdownMenuLabel>
+          </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
