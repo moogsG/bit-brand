@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,11 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
+	const [columnState, setColumns] = useState<KanbanColumn[]>(columns);
+	const [taskState, setTasks] = useState<Task[]>(tasks);
+
 	const getTasksForColumn = (columnId: string) => {
-		return tasks
+		return taskState
 			.filter((t) => t.kanbanColumnId === columnId)
 			.sort((a, b) => a.position - b.position);
 	};
@@ -32,9 +36,48 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 		}
 	};
 
+	async function handleAddColumn() {
+		const name = window.prompt("Column name");
+		if (!name) return;
+		try {
+			const res = await fetch("/api/kanban-columns", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ clientId, name, position: columnState.length }),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const col = (await res.json()) as KanbanColumn;
+			setColumns((prev) => [...prev, col]);
+		} catch (err) {
+			console.error("Failed to add column", err);
+		}
+	}
+
+	async function handleAddTask(columnId: string) {
+		const title = window.prompt("Task title");
+		if (!title) return;
+		try {
+			const res = await fetch("/api/tasks", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					clientId,
+					title,
+					kanbanColumnId: columnId,
+					position: getTasksForColumn(columnId).length,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const task = (await res.json()) as Task;
+			setTasks((prev) => [...prev, task]);
+		} catch (err) {
+			console.error("Failed to add task", err);
+		}
+	}
+
 	return (
 		<div className="flex gap-4 overflow-x-auto pb-4">
-			{columns.map((column) => {
+			{columnState.map((column) => {
 				const columnTasks = getTasksForColumn(column.id);
 				return (
 					<div
@@ -101,13 +144,14 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 										</div>
 									</Card>
 								))}
-								<Button
-									variant="ghost"
-									size="sm"
-									className="w-full justify-start text-muted-foreground"
-								>
-									<Plus className="h-4 w-4 mr-2" />
-									Add task
+									<Button
+										variant="ghost"
+										size="sm"
+										className="w-full justify-start text-muted-foreground"
+										onClick={() => handleAddTask(column.id)}
+									>
+										<Plus className="h-4 w-4 mr-2" />
+										Add task
 								</Button>
 							</CardContent>
 						</Card>
@@ -118,6 +162,7 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 				<Button
 					variant="outline"
 					className="w-full h-full min-h-[200px] border-dashed"
+					onClick={handleAddColumn}
 				>
 					<Plus className="h-5 w-5 mr-2" />
 					Add column
