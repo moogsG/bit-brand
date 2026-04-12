@@ -8,12 +8,13 @@ import {
 	invitations,
 	approvals,
 	tasks,
+	clientMessages,
 } from "@/lib/db/schema";
-import { eq, count, desc, and, isNull } from "drizzle-orm";
+import { eq, count, desc, and, isNull, or } from "drizzle-orm";
 import { AdminHeader } from "@/components/admin/admin-header";
-import { ClientStatusBadge } from "@/components/admin/client-status-badge";
 import { PendingApprovalsCard } from "@/components/admin/pending-approvals-card";
 import { MyTasksCard } from "@/components/admin/my-tasks-card";
+import { ClientHealthCard } from "@/components/admin/client-health-card";
 import {
 	Card,
 	CardContent,
@@ -54,7 +55,7 @@ export default async function AdminDashboardPage() {
       .from(users)
       .where(eq(users.role, "CLIENT"))
       .get(),
-    db.select().from(clients).orderBy(desc(clients.createdAt)).limit(5),
+    db.select().from(clients).orderBy(desc(clients.createdAt)).limit(8),
     db
       .select()
       .from(approvals)
@@ -70,6 +71,57 @@ export default async function AdminDashboardPage() {
       .limit(10)
       .all(),
   ]);
+
+  // Fetch health metrics for recent clients
+  const clientIds = recentClients.map((c) => c.id);
+  const clientHealthData = await Promise.all(
+    clientIds.map(async (clientId) => {
+      const [pendingApprovalsCount, criticalTasksCount, unreadMessagesCount] =
+        await Promise.all([
+          // Pending approvals for this client
+          db
+            .select({ count: count() })
+            .from(approvals)
+            .where(
+              and(eq(approvals.clientId, clientId), eq(approvals.status, "PENDING"))
+            )
+            .get()
+            .then((r) => r?.count ?? 0),
+          // Critical tasks: BLOCKED status or URGENT priority
+          db
+            .select({ count: count() })
+            .from(tasks)
+            .where(
+              and(
+                eq(tasks.clientId, clientId),
+                or(eq(tasks.status, "BLOCKED"), eq(tasks.priority, "URGENT"))
+              )
+            )
+            .get()
+            .then((r) => r?.count ?? 0),
+          // Unread messages from client (sender_role = CLIENT, readAt is null)
+          db
+            .select({ count: count() })
+            .from(clientMessages)
+            .where(
+              and(
+                eq(clientMessages.clientId, clientId),
+                eq(clientMessages.senderRole, "CLIENT"),
+                isNull(clientMessages.readAt)
+              )
+            )
+            .get()
+            .then((r) => r?.count ?? 0),
+        ]);
+
+      return {
+        clientId,
+        pendingApprovals: pendingApprovalsCount,
+        criticalTasks: criticalTasksCount,
+        unreadMessages: unreadMessagesCount,
+      };
+    })
+  );
 
   const stats = [
     {
@@ -128,11 +180,11 @@ export default async function AdminDashboardPage() {
           <MyTasksCard tasks={myTasks} userId={session.user.id} />
         </div>
 
-        {/* Recent Clients */}
+        {/* Client Health Cards */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Recent Clients</CardTitle>
+              <CardTitle>Clients</CardTitle>
               <Link
                 href="/admin/clients"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -141,9 +193,9 @@ export default async function AdminDashboardPage() {
               </Link>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent>
             {recentClients.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground text-sm px-4">
+              <div className="py-8 text-center text-muted-foreground text-sm">
                 No clients yet.{" "}
                 <Link
                   href="/admin/clients"
@@ -153,27 +205,23 @@ export default async function AdminDashboardPage() {
                 </Link>
               </div>
             ) : (
-              <div className="divide-y divide-border">
-                {recentClients.map((client) => (
-                  <Link
-                    key={client.id}
-                    href={`/admin/clients/${client.id}`}
-                    className="flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{client.name}</p>
-                      <p className="text-xs text-muted-foreground">{client.domain}</p>
-                    </div>
-                    <div className="flex items-center gap-3 ml-4 flex-shrink-0">
-                      <ClientStatusBadge isActive={client.isActive} />
-                      <span className="text-xs text-muted-foreground hidden sm:block">
-                        {client.createdAt
-                          ? new Date(client.createdAt).toLocaleDateString()
-                          : "—"}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {recentClients.map((client) => {
+                  const healthData = clientHealthData.find(
+                    (h) => h.clientId === client.id
+                  );
+                  return (
+                    <ClientHealthCard
+                      key={client.id}
+                      client={client}
+                      counts={{
+                        pendingApprovals: healthData?.pendingApprovals ?? 0,
+                        criticalTasks: healthData?.criticalTasks ?? 0,
+                        unreadMessages: healthData?.unreadMessages ?? 0,
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
           </CardContent>
