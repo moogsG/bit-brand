@@ -8,6 +8,20 @@
       "when": 1775099924530,
       "tag": "0000_yummy_dexter_bennett",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1775943028654,
+      "tag": "0001_mysterious_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775943855237,
+      "tag": "0002_lyrical_amphibian",
+      "breakpoints": true
     }
   ]
 }

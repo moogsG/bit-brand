@@ -172,7 +172,7 @@ src/
 
 ## Environment Variables
 
-Create a `.env.local` file at the project root:
+Create a `.env.local` file at the project root (copy from `.env.example`):
 
 ```bash
 # Auth (REQUIRED)
@@ -182,6 +182,12 @@ NEXTAUTH_URL=http://localhost:3000
 # Database (REQUIRED)
 DATABASE_URL=./data/portal.db
 
+# Credential Encryption (REQUIRED)
+ENCRYPTION_KEY=                   # Generate with: openssl rand -hex 32 (64 hex chars)
+
+# Scheduled Jobs (REQUIRED for production)
+CRON_SECRET=                      # Generate with: openssl rand -base64 32
+
 # Email (Optional — blank = console.log mode)
 RESEND_API_KEY=
 RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>
@@ -189,15 +195,19 @@ RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>
 # Google OAuth (Optional — not yet implemented)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-
-# Vercel Cron (REQUIRED for production)
-CRON_SECRET=                      # Random secret for cron endpoint auth
-
-# Credential Encryption (REQUIRED for production)
-ENCRYPTION_KEY=                   # 32-byte hex key (64 hex chars)
 ```
 
-> ⚠️ **WARNING:** Never commit `.env.local` to version control.
+### Required Environment Variables
+
+| Variable | Required | Purpose | How to Generate |
+|----------|----------|---------|-----------------|
+| `AUTH_SECRET` | **Yes** | NextAuth JWT signing secret | `openssl rand -base64 32` |
+| `ENCRYPTION_KEY` | **Yes** | Encrypts API credentials in database | `openssl rand -hex 32` (must be 64 hex chars) |
+| `CRON_SECRET` | Production | Authenticates scheduled sync jobs | `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | **Yes** | Base URL for auth callbacks | `http://localhost:3000` (dev) |
+| `DATABASE_URL` | **Yes** | SQLite database path | `./data/portal.db` |
+
+> ⚠️ **CRITICAL:** Never commit `.env.local` to version control. The `ENCRYPTION_KEY` protects all API credentials stored in the database. If lost, all stored credentials become unrecoverable.
 
 ---
 
