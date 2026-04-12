@@ -76,52 +76,40 @@ export default async function AdminDashboardPage() {
   const clientIds = recentClients.map((c) => c.id);
   const clientHealthData = await Promise.all(
     clientIds.map(async (clientId) => {
-      const [pendingApprovalsCount, criticalTasksCount, unreadMessagesCount] =
-        await Promise.all([
-          // Pending approvals for this client
-          (async () => {
-            const row = await db
-              .select({ count: count() })
-              .from(approvals)
-              .where(
-                and(
-                  eq(approvals.clientId, clientId),
-                  eq(approvals.status, "PENDING"),
-                ),
-              )
-              .get();
-            return row?.count ?? 0;
-          })(),
-          // Critical tasks: BLOCKED status or URGENT priority
-          (async () => {
-            const row = await db
-              .select({ count: count() })
-              .from(tasks)
-              .where(
-                and(
-                  eq(tasks.clientId, clientId),
-                  or(eq(tasks.status, "BLOCKED"), eq(tasks.priority, "URGENT")),
-                ),
-              )
-              .get();
-            return row?.count ?? 0;
-          })(),
-          // Unread messages from client (sender_role = CLIENT, readAt is null)
-          (async () => {
-            const row = await db
-              .select({ count: count() })
-              .from(clientMessages)
-              .where(
-                and(
-                  eq(clientMessages.clientId, clientId),
-                  eq(clientMessages.senderRole, "CLIENT"),
-                  isNull(clientMessages.readAt),
-                ),
-              )
-              .get();
-            return row?.count ?? 0;
-          })(),
-        ]);
+      const pendingRow = await db
+        .select({ count: count() })
+        .from(approvals)
+        .where(
+          and(eq(approvals.clientId, clientId), eq(approvals.status, "PENDING")),
+        )
+        .get();
+
+      const criticalRow = await db
+        .select({ count: count() })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.clientId, clientId),
+            or(eq(tasks.status, "BLOCKED"), eq(tasks.priority, "URGENT")),
+          ),
+        )
+        .get();
+
+      const unreadRow = await db
+        .select({ count: count() })
+        .from(clientMessages)
+        .where(
+          and(
+            eq(clientMessages.clientId, clientId),
+            eq(clientMessages.senderRole, "CLIENT"),
+            isNull(clientMessages.readAt),
+          ),
+        )
+        .get();
+
+      const pendingApprovalsCount = pendingRow?.count ?? 0;
+      const criticalTasksCount = criticalRow?.count ?? 0;
+      const unreadMessagesCount = unreadRow?.count ?? 0;
 
       return {
         clientId,
