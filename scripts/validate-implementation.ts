@@ -38,7 +38,7 @@ function fileContains(path: string, pattern: string | RegExp): boolean {
 	}
 }
 
-console.log("🔍 Validating implementation...\n");
+console.info("🔍 Validating implementation...\n");
 
 // 1. Check for Ahrefs/SEMrush references
 check(
@@ -124,32 +124,32 @@ check(
 );
 
 // Print results
-console.log("Results:\n");
+console.info("Results:\n");
 
 let passed = 0;
 let failed = 0;
 
 for (const result of results) {
 	const icon = result.passed ? "✅" : "❌";
-	console.log(`${icon} ${result.name}`);
-	if (!result.passed) {
-		console.log(`   ${result.message}`);
+  console.info(`${icon} ${result.name}`);
+  if (!result.passed) {
+    console.info(`   ${result.message}`);
 		failed++;
 	} else {
 		passed++;
 	}
 }
 
-console.log(`\n📊 Summary: ${passed} passed, ${failed} failed\n`);
+console.info(`\n📊 Summary: ${passed} passed, ${failed} failed\n`);
 
 if (failed > 0) {
-	console.log("❌ Validation failed. Please fix the issues above.\n");
-	process.exit(1);
+  console.error("❌ Validation failed. Please fix the issues above.\n");
+  process.exit(1);
 } else {
-	console.log("✅ All validations passed!\n");
-	console.log("Next steps:");
-	console.log("  1. Run: bun install");
-	console.log("  2. Run: bun run test");
-	console.log("  3. Run: bun run check\n");
-	process.exit(0);
+  console.info("✅ All validations passed!\n");
+  console.info("Next steps:");
+  console.info("  1. Run: bun install");
+  console.info("  2. Run: bun run test");
+  console.info("  3. Run: bun run check\n");
+  process.exit(0);
 }

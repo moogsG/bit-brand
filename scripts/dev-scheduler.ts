@@ -12,7 +12,7 @@ if (!CRON_SECRET) {
 
 async function triggerWeeklySync() {
 	const timestamp = new Date().toISOString();
-	console.log(`[dev-scheduler] ${timestamp} — Triggering weekly sync...`);
+  console.info(`[dev-scheduler] ${timestamp} — Triggering weekly sync...`);
 
 	try {
 		const response = await fetch(`${BASE_URL}/api/cron/weekly-sync`, {
@@ -22,14 +22,14 @@ async function triggerWeeklySync() {
 			},
 		});
 
-		const result = await response.json();
-		console.log(
-			`[dev-scheduler] ${response.status}:`,
-			JSON.stringify(result, null, 2),
-		);
-	} catch (error) {
-		console.error("[dev-scheduler] Error:", error);
-	}
+    const result = await response.json();
+    console.info(
+      `[dev-scheduler] ${response.status}:`,
+      JSON.stringify(result, null, 2),
+    );
+  } catch (error) {
+    console.error("[dev-scheduler] Error:", error);
+  }
 }
 
 // Run immediately
@@ -38,6 +38,6 @@ triggerWeeklySync();
 // Then repeat on interval
 setInterval(triggerWeeklySync, INTERVAL);
 
-console.log(
-	`[dev-scheduler] Running every ${INTERVAL / 1000}s. Press Ctrl+C to stop.`,
+console.info(
+  `[dev-scheduler] Running every ${INTERVAL / 1000}s. Press Ctrl+C to stop.`,
 );

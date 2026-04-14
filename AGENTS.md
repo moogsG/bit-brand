@@ -834,7 +834,7 @@ Tailwind v4 uses CSS custom properties. The theme colors from `themeConfig` shou
 ### Environment Variables for Email
 
 ```bash
-RESEND_API_KEY=re_xxxxx         # Required for sending; if blank, console.log mode
+RESEND_API_KEY=re_xxxxx         # Required for sending; if blank, console output mode
 RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>  # Optional override
 ```
 
@@ -842,7 +842,7 @@ RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>  # Optional override
 
 1. Add a new `interface *EmailParams` to `src/lib/email/index.ts`
 2. Export a new `send*Email()` function following the existing pattern
-3. Add the POC console.log fallback (check `!process.env.RESEND_API_KEY`)
+3. Add the POC console output fallback (check `!process.env.RESEND_API_KEY`)
 4. Call the function from the appropriate API route or server action
 
 ---
@@ -860,7 +860,7 @@ Copy from `.env.example` and fill in required values.
 | `CRON_SECRET` | Production | Secret for authenticating scheduled sync jobs. Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | **Yes** | Base URL for NextAuth callbacks. `http://localhost:3000` for dev |
 | `DATABASE_URL` | **Yes** | Path to SQLite file. `./data/portal.db` |
-| `RESEND_API_KEY` | Optional | Resend API key for sending real emails. Blank = console.log mode |
+| `RESEND_API_KEY` | Optional | Resend API key for sending real emails. Blank = console output mode |
 | `RESEND_FROM` | Optional | From address for emails. Defaults to `BIT Brand Anarchy <noreply@bitbrandanarchy.com>` |
 | `GOOGLE_CLIENT_ID` | Optional | Google OAuth client ID for GA4/GSC OAuth flow |
 | `GOOGLE_CLIENT_SECRET` | Optional | Google OAuth client secret |
@@ -885,7 +885,7 @@ ENCRYPTION_KEY=<64-character-hex-string>
 # Scheduled Jobs (REQUIRED for production)
 CRON_SECRET=<generated secret>
 
-# Email (Optional — blank = console.log mode)
+# Email (Optional — blank = console output mode)
 RESEND_API_KEY=
 
 # Google OAuth (Optional — not yet implemented)
