@@ -1,7 +1,9 @@
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 import { db } from "@/lib/db";
-import { clientMessages, clientUsers, clients } from "@/lib/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { clientMessages, clients } from "@/lib/db/schema";
+import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // GET /api/messages?clientId=...
@@ -19,21 +21,9 @@ export async function GET(request: Request) {
 		return NextResponse.json({ error: "clientId is required" }, { status: 400 });
 	}
 
-	// Access control: Admin can view all, Client must belong to client
-	if (session.user.role === "CLIENT") {
-		const membership = await db
-			.select({ id: clientUsers.id })
-			.from(clientUsers)
-			.where(
-				and(
-					eq(clientUsers.clientId, clientId),
-					eq(clientUsers.userId, session.user.id),
-				),
-			)
-			.get();
-		if (!membership) {
-			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-		}
+	const accessContext = await getClientAccessContext(session, clientId);
+	if (!can("messages", "view", { session, clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const rows = await db
@@ -71,21 +61,9 @@ export async function POST(request: Request) {
 			return NextResponse.json({ error: "Client not found" }, { status: 404 });
 		}
 
-		// Access control
-		if (session.user.role === "CLIENT") {
-			const membership = await db
-				.select({ id: clientUsers.id })
-				.from(clientUsers)
-				.where(
-					and(
-						eq(clientUsers.clientId, clientId),
-						eq(clientUsers.userId, session.user.id),
-					),
-				)
-				.get();
-			if (!membership) {
-				return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-			}
+		const accessContext = await getClientAccessContext(session, clientId);
+		if (!can("messages", "edit", { session, clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}
 
 		const [created] = await db

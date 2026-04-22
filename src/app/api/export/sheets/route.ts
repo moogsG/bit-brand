@@ -3,13 +3,14 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
 	clients,
-	clientUsers,
 	keywordResearch,
 	monthlyReports,
 } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getReportAutoData } from "@/lib/reports/auto-data";
 import { z } from "zod";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const sheetsSchema = z.object({
 	type: z.enum(["keywords", "report"]),
@@ -52,20 +53,10 @@ export async function POST(req: NextRequest) {
 		return NextResponse.json({ error: "Client not found" }, { status: 404 });
 	}
 
-	if (session.user.role !== "ADMIN") {
-		const cu = await db
-			.select()
-			.from(clientUsers)
-			.where(
-				and(
-					eq(clientUsers.clientId, clientId),
-					eq(clientUsers.userId, session.user.id),
-				),
-			)
-			.get();
-		if (!cu) {
-			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-		}
+	const accessContext = await getClientAccessContext(session, clientId);
+
+	if (!can("export", "execute", { session, clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	try {

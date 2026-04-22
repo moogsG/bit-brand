@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, AlertCircle, CheckCircle2 } from "lucide-react";
+import type { HealthScoreResult } from "@/lib/health/score";
 
 interface ClientHealthCardProps {
 	client: {
@@ -17,14 +18,24 @@ interface ClientHealthCardProps {
 		criticalTasks: number;
 		unreadMessages: number;
 	};
+	health?: HealthScoreResult;
 }
 
-export function ClientHealthCard({ client, counts }: ClientHealthCardProps) {
+export function ClientHealthCard({
+	client,
+	counts,
+	health,
+}: ClientHealthCardProps) {
 	const { pendingApprovals, criticalTasks, unreadMessages } = counts;
-	
-	// Determine health status
-	const hasIssues = pendingApprovals > 0 || criticalTasks > 0;
-	const healthStatus = hasIssues ? "attention" : "healthy";
+
+	const healthStatus =
+		health?.status === "HEALTHY" || health?.status === "WATCH"
+			? "healthy"
+			: "attention";
+
+	const healthTooltip = health
+		? `Overall ${health.overallScore} / 100. Technical ${health.breakdown.technical.score}, Content ${health.breakdown.contentFreshness.score}, Active issues ${health.breakdown.activeIssues.score}.`
+		: "Health score is based on technical, content freshness, and active issue factors.";
 	
 	return (
 		<Link href={`/admin/clients/${client.id}`}>
@@ -42,6 +53,7 @@ export function ClientHealthCard({ client, counts }: ClientHealthCardProps) {
 						<Badge
 							variant={healthStatus === "attention" ? "destructive" : "default"}
 							className="flex-shrink-0"
+							title={healthTooltip}
 						>
 							{healthStatus === "attention" ? (
 								<>
@@ -56,6 +68,10 @@ export function ClientHealthCard({ client, counts }: ClientHealthCardProps) {
 							)}
 						</Badge>
 					</div>
+
+					{typeof health?.overallScore === "number" ? (
+						<div className="text-xs text-muted-foreground">Score: {health.overallScore}</div>
+					) : null}
 
 					{/* Counts grid */}
 					<div className="grid grid-cols-3 gap-2 pt-2 border-t">

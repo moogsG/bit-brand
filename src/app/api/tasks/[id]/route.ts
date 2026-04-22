@@ -1,9 +1,11 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { tasks, auditLogs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
+import { db } from "@/lib/db";
 import type { NewAuditLog } from "@/lib/db/schema";
+import { auditLogs, tasks } from "@/lib/db/schema";
 
 interface RouteContext {
 	params: Promise<{ id: string }>;
@@ -24,6 +26,17 @@ export async function GET(request: Request, context: RouteContext) {
 		return NextResponse.json({ error: "Not found" }, { status: 404 });
 	}
 
+	const accessContext = await getClientAccessContext(session, task.clientId);
+	if (
+		!can("tasks", "view", {
+			session,
+			clientId: task.clientId,
+			...accessContext,
+		})
+	) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
+
 	return NextResponse.json(task);
 }
 
@@ -32,10 +45,6 @@ export async function PATCH(request: Request, context: RouteContext) {
 	const session = await auth();
 	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-	}
-
-	if (session.user.role !== "ADMIN") {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const { id } = await context.params;
@@ -55,6 +64,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 			tags,
 			linkedResourceType,
 			linkedResourceId,
+			linkedResourceLabel,
 		} = body;
 
 		const task = await db.select().from(tasks).where(eq(tasks.id, id)).get();
@@ -63,7 +73,18 @@ export async function PATCH(request: Request, context: RouteContext) {
 			return NextResponse.json({ error: "Not found" }, { status: 404 });
 		}
 
-		const updateData: any = {
+		const accessContext = await getClientAccessContext(session, task.clientId);
+		if (
+			!can("tasks", "edit", {
+				session,
+				clientId: task.clientId,
+				...accessContext,
+			})
+		) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+
+		const updateData: Partial<typeof tasks.$inferInsert> = {
 			updatedAt: new Date(),
 		};
 
@@ -91,6 +112,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 			updateData.linkedResourceType = linkedResourceType;
 		if (linkedResourceId !== undefined)
 			updateData.linkedResourceId = linkedResourceId;
+		if (linkedResourceLabel !== undefined)
+			updateData.linkedResourceLabel = linkedResourceLabel;
 
 		const updated = await db
 			.update(tasks)
@@ -126,10 +149,6 @@ export async function DELETE(request: Request, context: RouteContext) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	if (session.user.role !== "ADMIN") {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-	}
-
 	const { id } = await context.params;
 
 	try {
@@ -137,6 +156,17 @@ export async function DELETE(request: Request, context: RouteContext) {
 
 		if (!task) {
 			return NextResponse.json({ error: "Not found" }, { status: 404 });
+		}
+
+		const accessContext = await getClientAccessContext(session, task.clientId);
+		if (
+			!can("tasks", "edit", {
+				session,
+				clientId: task.clientId,
+				...accessContext,
+			})
+		) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}
 
 		await db.delete(tasks).where(eq(tasks.id, id));

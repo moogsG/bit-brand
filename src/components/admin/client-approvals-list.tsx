@@ -1,15 +1,19 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ComponentProps } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getApprovalDisplayContext } from "@/lib/approvals/metadata";
 import type { Approval } from "@/lib/db/schema";
+
+type BadgeVariant = NonNullable<ComponentProps<typeof Badge>["variant"]>;
 
 interface ClientApprovalsListProps {
 	approvals: Approval[];
 }
 
 export function ClientApprovalsList({ approvals }: ClientApprovalsListProps) {
-	const getStatusColor = (status: string) => {
+	const getStatusColor = (status: string): BadgeVariant => {
 		switch (status) {
 			case "APPROVED":
 				return "default";
@@ -53,11 +57,12 @@ export function ClientApprovalsList({ approvals }: ClientApprovalsListProps) {
 							</thead>
 							<tbody>
 								{approvals.map((approval) => {
-									const metadata = approval.metadata
-										? JSON.parse(approval.metadata)
-										: {};
-									const resolvedAt =
-										approval.approvedAt || approval.rejectedAt;
+									const display = getApprovalDisplayContext({
+										resourceType: approval.resourceType,
+										resourceId: approval.resourceId,
+										metadata: approval.metadata,
+									});
+									const resolvedAt = approval.approvedAt || approval.rejectedAt;
 									return (
 										<tr
 											key={approval.id}
@@ -65,16 +70,19 @@ export function ClientApprovalsList({ approvals }: ClientApprovalsListProps) {
 										>
 											<td className="px-4 py-3">
 												<div>
-													<p className="font-medium">
-														{approval.resourceType}
-													</p>
+													<p className="font-medium">{display.resourceLabel}</p>
 													<p className="text-xs text-muted-foreground">
-														{metadata.title || "Untitled"}
+														{display.title}
 													</p>
+													{display.subtitle ? (
+														<p className="text-[11px] text-muted-foreground">
+															{display.subtitle}
+														</p>
+													) : null}
 												</div>
 											</td>
 											<td className="px-4 py-3">
-												<Badge variant={getStatusColor(approval.status) as any}>
+												<Badge variant={getStatusColor(approval.status)}>
 													{approval.status}
 												</Badge>
 											</td>

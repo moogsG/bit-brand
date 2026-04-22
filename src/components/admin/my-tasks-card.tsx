@@ -3,8 +3,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckSquare, Circle, Clock } from "lucide-react";
+import type React from "react";
 import type { Task } from "@/lib/db/schema";
-import Link from "next/link";
+
+type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>["variant"]>;
 
 interface MyTasksCardProps {
 	tasks: Task[];
@@ -28,7 +30,7 @@ export function MyTasksCard({ tasks, userId }: MyTasksCardProps) {
 		}
 	};
 
-	const getPriorityColor = (priority: string) => {
+	const getPriorityColor = (priority: string): BadgeVariant => {
 		switch (priority) {
 			case "URGENT":
 				return "destructive";
@@ -80,7 +82,7 @@ export function MyTasksCard({ tasks, userId }: MyTasksCardProps) {
 									</div>
 								</div>
 								<Badge
-									variant={getPriorityColor(task.priority) as any}
+									variant={getPriorityColor(task.priority)}
 									className="ml-4 flex-shrink-0"
 								>
 									{task.priority}

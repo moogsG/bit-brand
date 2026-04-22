@@ -39,7 +39,7 @@ export async function createApprovalRequest(params: {
 	resourceId: string;
 	clientId: string;
 	requestedBy: string;
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 }): Promise<string> {
 	const { policyName, resourceType, resourceId, clientId, requestedBy, metadata = {} } = params;
 
@@ -157,7 +157,7 @@ export async function hasPendingApproval(
 export async function getApprovalStatus(
 	resourceType: string,
 	resourceId: string,
-): Promise<"APPROVED" | "PENDING" | "REJECTED" | "NONE"> {
+): Promise<"APPROVED" | "PENDING" | "REJECTED" | "CANCELLED" | "NONE"> {
 	const approval = await db
 		.select()
 		.from(approvals)
@@ -174,5 +174,5 @@ export async function getApprovalStatus(
 		return "NONE";
 	}
 
-	return approval.status as any;
+	return approval.status;
 }

@@ -7,20 +7,47 @@ import { LayoutDashboard, Users, Settings, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { themeConfig } from "@/lib/theme.config";
 import { Button } from "@/components/ui/button";
+import { can } from "@/lib/auth/authorize";
+import type { PermissionModule } from "@/lib/auth/permissions";
 
-const navItems = [
-  { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/clients", label: "Clients", icon: Users },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
+const navItems: {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  module: PermissionModule;
+}[] = [
+  {
+    href: "/admin/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    module: "admin",
+  },
+  { href: "/admin/clients", label: "Clients", icon: Users, module: "clients" },
+  {
+    href: "/admin/settings",
+    label: "Settings",
+    icon: Settings,
+    module: "settings",
+  },
 ];
 
 interface AdminSidebarProps {
   userName: string;
   userEmail: string;
+  userRole: string;
+  userRawRole?: string;
 }
 
-export function AdminSidebar({ userName, userEmail }: AdminSidebarProps) {
+export function AdminSidebar({
+  userName,
+  userEmail,
+  userRole,
+  userRawRole,
+}: AdminSidebarProps) {
   const pathname = usePathname();
+  const visibleNavItems = navItems.filter((item) =>
+    can(item.module, "view", { role: userRole, rawRole: userRawRole }),
+  );
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-border bg-sidebar text-sidebar-foreground fixed left-0 top-0 z-30">
@@ -41,7 +68,7 @@ export function AdminSidebar({ userName, userEmail }: AdminSidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {visibleNavItems.map(({ href, label, icon: Icon }) => {
           const isActive =
             href === "/admin/dashboard"
               ? pathname === "/admin/dashboard" || pathname === "/admin"

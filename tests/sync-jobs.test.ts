@@ -25,6 +25,16 @@ vi.mock("@/lib/db/schema", () => ({
 		id: "id",
 		name: "name",
 	},
+	clientUsers: {
+		id: "id",
+		clientId: "clientId",
+		userId: "userId",
+	},
+	userClientAssignments: {
+		id: "id",
+		clientId: "clientId",
+		userId: "userId",
+	},
 	syncJobs: {
 		id: "id",
 		clientId: "clientId",
@@ -64,10 +74,10 @@ describe("Sync Jobs Creation - Smoke Tests", () => {
 		vi.clearAllMocks();
 	});
 
-	describe("POST /api/sync/[clientId]/[source]", () => {
+		describe("POST /api/sync/[clientId]/[source]", () => {
 		it("should return 401 for unauthenticated requests", async () => {
 			const { auth } = await import("@/lib/auth");
-			vi.mocked(auth).mockResolvedValue(null);
+			vi.mocked(auth as any).mockResolvedValue(null);
 
 			const { POST } = await import(
 				"@/app/api/sync/[clientId]/[source]/route"
@@ -85,7 +95,7 @@ describe("Sync Jobs Creation - Smoke Tests", () => {
 			expect(data.error).toBe("Unauthorized");
 		});
 
-		it("should return 401 for non-admin users", async () => {
+		it("should return 403 for unauthorized roles", async () => {
 			const { auth } = await import("@/lib/auth");
 			vi.mocked(auth).mockResolvedValue({
 				user: { id: "user-1", email: "client@test.com", role: "CLIENT" },
@@ -102,7 +112,7 @@ describe("Sync Jobs Creation - Smoke Tests", () => {
 			const params = Promise.resolve({ clientId: "client-1", source: "GA4" });
 			const response = await POST(request as any, { params });
 
-			expect(response.status).toBe(401);
+			expect(response.status).toBe(403);
 		});
 
 		it("should return 400 for invalid source type", async () => {
@@ -288,12 +298,12 @@ describe("Sync Jobs Creation - Smoke Tests", () => {
 			vi.mocked(db.get).mockReturnValue({ id: "client-1" });
 
 			let insertedJob: any = null;
-			vi.mocked(db.insert).mockImplementation(() => ({
+			vi.mocked(db.insert as any).mockImplementation(() => ({
 				values: (job: any) => {
 					insertedJob = job;
 					return { run: vi.fn() };
 				},
-			})) as any;
+			}));
 
 			vi.mocked(syncGSCData).mockResolvedValue({
 				success: true,
@@ -334,7 +344,7 @@ describe("Sync Jobs Creation - Smoke Tests", () => {
 			vi.mocked(db.get).mockReturnValue({ id: "client-1" });
 
 			let updatedJob: any = null;
-			vi.mocked(db.update).mockImplementation(() => ({
+			vi.mocked(db.update as any).mockImplementation(() => ({
 				set: (job: any) => {
 					updatedJob = job;
 					return {
@@ -342,7 +352,7 @@ describe("Sync Jobs Creation - Smoke Tests", () => {
 						run: vi.fn(),
 					};
 				},
-			})) as any;
+			}));
 
 			vi.mocked(syncDataForSeoData).mockResolvedValue({
 				success: true,

@@ -3,30 +3,34 @@ import { ArrowLeft, Eye, Globe } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { ClientApprovalsList } from "@/components/admin/client-approvals-list";
 import { ClientEditForm } from "@/components/admin/client-edit-form";
 import { ClientStatusBadge } from "@/components/admin/client-status-badge";
 import { DataSourceForm } from "@/components/admin/data-source-form";
 import { InviteUserDialog } from "@/components/admin/invite-user-dialog";
-import { SyncControls } from "@/components/admin/sync-controls";
 import { KanbanBoard } from "@/components/admin/kanban-board";
-import { ClientApprovalsList } from "@/components/admin/client-approvals-list";
+import { SyncControls } from "@/components/admin/sync-controls";
 import { MessagesThread } from "@/components/portal/messages-thread";
+import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 import { db } from "@/lib/db";
 import {
+	approvals,
+	clientMessages,
 	clients,
 	clientUsers,
-		dataSources,
-		invitations,
-		syncJobs,
-		users,
-		tasks,
-		kanbanColumns,
-		approvals,
-		clientMessages,
+	dataSources,
+	invitations,
+	kanbanColumns,
+	syncJobs,
+	tasks,
+	users,
 } from "@/lib/db/schema";
+import { phase1Flags, phase3Flags } from "@/lib/flags";
 
 interface PageProps {
 	params: Promise<{ id: string }>;
@@ -38,12 +42,17 @@ export default async function ClientDetailPage({
 	searchParams,
 }: PageProps) {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		redirect("/login");
 	}
 
 	const { id } = await params;
 	const { tab = "overview" } = await searchParams;
+	const accessContext = await getClientAccessContext(session, id);
+
+	if (!can("clients", "view", { session, clientId: id, ...accessContext })) {
+		redirect("/portal");
+	}
 
 	// Fetch client
 	const client = await db
@@ -53,6 +62,30 @@ export default async function ClientDetailPage({
 		.get();
 
 	if (!client) notFound();
+
+	const canViewOnboarding =
+		phase1Flags.onboardingV2() &&
+		can("onboarding", "view", {
+			session,
+			clientId: id,
+			...accessContext,
+		});
+
+	const canViewImplementationQueue = phase3Flags.technicalAgentV1()
+		? can("technical", "view", {
+				session,
+				clientId: id,
+				...accessContext,
+			})
+		: true;
+
+	const canViewLinks = phase3Flags.linksV1()
+		? can("links", "view", {
+				session,
+				clientId: id,
+				...accessContext,
+			})
+		: false;
 
 	// Fetch related data in parallel
 	const [
@@ -76,11 +109,7 @@ export default async function ClientDetailPage({
 			.from(clientUsers)
 			.innerJoin(users, eq(clientUsers.userId, users.id))
 			.where(eq(clientUsers.clientId, id)),
-		db
-			.select()
-			.from(invitations)
-			.where(eq(invitations.clientId, id))
-			.orderBy(),
+		db.select().from(invitations).where(eq(invitations.clientId, id)).orderBy(),
 		db.select().from(dataSources).where(eq(dataSources.clientId, id)),
 		db
 			.select()
@@ -90,11 +119,7 @@ export default async function ClientDetailPage({
 			.limit(20)
 			.all(),
 		db.select().from(tasks).where(eq(tasks.clientId, id)).all(),
-		db
-			.select()
-			.from(kanbanColumns)
-			.where(eq(kanbanColumns.clientId, id))
-			.all(),
+		db.select().from(kanbanColumns).where(eq(kanbanColumns.clientId, id)).all(),
 		db
 			.select()
 			.from(approvals)
@@ -136,8 +161,35 @@ export default async function ClientDetailPage({
 
 	const externalLinks = [
 		{ href: `/admin/clients/${id}/keywords`, label: "Keywords" },
+		{
+			href: `/admin/clients/${id}/opportunities`,
+			label: "Keyword Opportunities",
+		},
 		{ href: `/admin/clients/${id}/strategy`, label: "Strategy" },
 		{ href: `/admin/clients/${id}/reports`, label: "Reports" },
+		{
+			href: `/admin/clients/${id}/technical-audits`,
+			label: "Technical Audits",
+		},
+		...(canViewLinks
+			? [
+					{
+						href: `/admin/clients/${id}/links`,
+						label: "Links",
+					},
+				]
+			: []),
+		...(phase3Flags.technicalAgentV1() && canViewImplementationQueue
+			? [
+					{
+						href: `/admin/clients/${id}/implementation-queue`,
+						label: "Implementation Queue",
+					},
+				]
+			: []),
+		...(canViewOnboarding
+			? [{ href: `/admin/clients/${id}/onboarding`, label: "Onboarding" }]
+			: []),
 	];
 
 	return (
@@ -183,17 +235,24 @@ export default async function ClientDetailPage({
 									: "—"}
 							</p>
 						</div>
-				<div className="flex-shrink-0">
-					<Link
-						href={`/portal/${client.slug}/dashboard?impersonate=true`}
-						className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-					>
-						<Eye className="h-4 w-4" />
-						Preview Portal
-					</Link>
+						<div className="flex-shrink-0">
+							<Link
+								href={`/portal/${client.slug}/dashboard?impersonate=true`}
+								className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+							>
+								<Eye className="h-4 w-4" />
+								Preview Portal
+							</Link>
+						</div>
+					</div>
 				</div>
-			</div>
-				</div>
+
+				<NorthStarRibbon
+					clientId={id}
+					onboardingHref={
+						canViewOnboarding ? `/admin/clients/${id}/onboarding` : undefined
+					}
+				/>
 
 				{/* Tabs */}
 				<div className="border-b border-border">

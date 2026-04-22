@@ -1,9 +1,20 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { tasks, auditLogs } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { and, desc, eq, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import type { NewTask, NewAuditLog } from "@/lib/db/schema";
+import { z } from "zod";
+import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
+import { db } from "@/lib/db";
+import type { NewAuditLog, NewTask } from "@/lib/db/schema";
+import { auditLogs, tasks } from "@/lib/db/schema";
+
+const taskStatusSchema = z.enum([
+	"TODO",
+	"IN_PROGRESS",
+	"REVIEW",
+	"DONE",
+	"BLOCKED",
+]);
 
 // GET /api/tasks - List tasks
 export async function GET(request: Request) {
@@ -24,25 +35,27 @@ export async function GET(request: Request) {
 		);
 	}
 
-	let query = db
-		.select()
-		.from(tasks)
-		.where(eq(tasks.clientId, clientId))
-		.orderBy(desc(tasks.createdAt));
-
-	const conditions = [eq(tasks.clientId, clientId)];
-	if (assignedTo) conditions.push(eq(tasks.assignedTo, assignedTo));
-	if (status) conditions.push(eq(tasks.status, status as any));
-
-	if (conditions.length > 1) {
-		query = db
-			.select()
-			.from(tasks)
-			.where(and(...conditions))
-			.orderBy(desc(tasks.createdAt)) as any;
+	const accessContext = await getClientAccessContext(session, clientId);
+	if (!can("tasks", "view", { session, clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
-	const results = await query.all();
+	const conditions: SQL[] = [eq(tasks.clientId, clientId)];
+	if (assignedTo) conditions.push(eq(tasks.assignedTo, assignedTo));
+	if (status) {
+		const parsedStatus = taskStatusSchema.safeParse(status);
+		if (!parsedStatus.success) {
+			return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+		}
+		conditions.push(eq(tasks.status, parsedStatus.data));
+	}
+
+	const results = await db
+		.select()
+		.from(tasks)
+		.where(and(...conditions))
+		.orderBy(desc(tasks.createdAt))
+		.all();
 	return NextResponse.json(results);
 }
 
@@ -51,10 +64,6 @@ export async function POST(request: Request) {
 	const session = await auth();
 	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-	}
-
-	if (session.user.role !== "ADMIN") {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	try {
@@ -72,6 +81,7 @@ export async function POST(request: Request) {
 			tags = [],
 			linkedResourceType,
 			linkedResourceId,
+			linkedResourceLabel,
 		} = body;
 
 		if (!clientId || !title) {
@@ -79,6 +89,11 @@ export async function POST(request: Request) {
 				{ error: "clientId and title are required" },
 				{ status: 400 },
 			);
+		}
+
+		const accessContext = await getClientAccessContext(session, clientId);
+		if (!can("tasks", "edit", { session, clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}
 
 		const newTask: NewTask = {
@@ -95,6 +110,7 @@ export async function POST(request: Request) {
 			tags: JSON.stringify(tags),
 			linkedResourceType: linkedResourceType || null,
 			linkedResourceId: linkedResourceId || null,
+			linkedResourceLabel: linkedResourceLabel || null,
 		};
 
 		const result = await db.insert(tasks).values(newTask).returning();

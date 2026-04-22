@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { ChangePasswordForm } from "@/components/admin/change-password-form";
-import { themeConfig } from "@/lib/theme.config";
+import { Badge } from "@/components/ui/badge";
 import {
 	Card,
 	CardContent,
@@ -11,7 +10,9 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { themeConfig } from "@/lib/theme.config";
 
 const INTEGRATIONS = [
 	{ name: "Google Analytics 4", key: "GA4", scope: "Agency" },
@@ -23,8 +24,12 @@ const INTEGRATIONS = [
 
 export default async function AdminSettingsPage() {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		redirect("/login");
+	}
+
+	if (!can("settings", "edit", { session })) {
+		redirect("/portal");
 	}
 
 	return (

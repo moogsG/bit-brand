@@ -1,4 +1,6 @@
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 import { db } from "@/lib/db";
 import { kanbanColumns, auditLogs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -14,10 +16,6 @@ export async function PATCH(request: Request, context: RouteContext) {
 	const session = await auth();
 	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-	}
-
-	if (session.user.role !== "ADMIN") {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const { id } = await context.params;
@@ -36,7 +34,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 			return NextResponse.json({ error: "Not found" }, { status: 404 });
 		}
 
-		const updateData: any = {
+		const accessContext = await getClientAccessContext(session, column.clientId);
+		if (!can("kanban", "edit", { session, clientId: column.clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+
+		const updateData: Partial<typeof kanbanColumns.$inferInsert> = {
 			updatedAt: new Date(),
 		};
 
@@ -79,10 +82,6 @@ export async function DELETE(request: Request, context: RouteContext) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	if (session.user.role !== "ADMIN") {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-	}
-
 	const { id } = await context.params;
 
 	try {
@@ -94,6 +93,11 @@ export async function DELETE(request: Request, context: RouteContext) {
 
 		if (!column) {
 			return NextResponse.json({ error: "Not found" }, { status: 404 });
+		}
+
+		const accessContext = await getClientAccessContext(session, column.clientId);
+		if (!can("kanban", "edit", { session, clientId: column.clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}
 
 		await db.delete(kanbanColumns).where(eq(kanbanColumns.id, id));

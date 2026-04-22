@@ -55,6 +55,11 @@ By the end of Phase 1, the platform must support:
 - New roles can be assigned and persisted.
 - No route breaks from enum mismatch.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (schema + migration + auth mapping + seed updates)
+- [x] Validation passed (`bunx tsc --noEmit` and `bun run build`)
+- [x] Story 1.1 complete
+
 ---
 
 ### Story 1.2 — Permission matrix + policy engine
@@ -78,6 +83,11 @@ By the end of Phase 1, the platform must support:
 - Client users cannot access internal-only module actions.
 - Policy checks are reused by both UI and API surfaces.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (permission matrix + policy engine + representative API/UI authz centralization)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 1.2 complete
+
 ---
 
 ### Story 1.3 — Assignment model (manager/specialist -> clients)
@@ -95,6 +105,11 @@ By the end of Phase 1, the platform must support:
 **Acceptance criteria**
 - Assigned users can access assigned clients only.
 - Owners/admins can access all clients.
+
+**Execution checklist (live status)**
+- [x] Implementation merged (assignment table + assignment API + scoped client access enforcement)
+- [x] Validation passed (`bun run db:migrate`, `bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 1.3 complete
 
 ---
 
@@ -122,6 +137,11 @@ By the end of Phase 1, the platform must support:
 - Onboarding data is saved and versioned per client.
 - API returns complete onboarding profile for a client.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (onboarding schema + migration + service layer + onboarding API routes)
+- [x] Validation passed (`bun run db:migrate`, `bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 2.1 complete
+
 ---
 
 ### Story 2.2 — Onboarding wizard UI
@@ -143,6 +163,11 @@ By the end of Phase 1, the platform must support:
 - Validation errors are clear and section-specific.
 - Returning users can resume incomplete onboarding.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (onboarding route + wizard components + step validation + draft/submit/resume flow)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 2.2 complete
+
 ---
 
 ### Story 2.3 — North Star ribbon in client workspace
@@ -159,6 +184,11 @@ By the end of Phase 1, the platform must support:
 **Acceptance criteria**
 - Ribbon visible for onboarded clients.
 - Graceful empty state for non-onboarded clients.
+
+**Execution checklist (live status)**
+- [x] Implementation merged (shared North Star ribbon + rendered across admin client workspace pages)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 2.3 complete
 
 ---
 
@@ -179,6 +209,11 @@ By the end of Phase 1, the platform must support:
 **Acceptance criteria**
 - Score deterministic and reproducible for same inputs.
 - Exposes component-level breakdown for UI tooltips.
+
+**Execution checklist (live status)**
+- [x] Implementation merged (health scoring service + dashboard aggregate query layer + minimal dashboard integration)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 3.1 complete
 
 ---
 
@@ -202,6 +237,11 @@ By the end of Phase 1, the platform must support:
 - Filters work by status, manager, industry.
 - Alerts bar reflects top critical items.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (dashboard refresh with client cards + alerts bar + quick filters + recent activity feed)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 3.2 complete
+
 ---
 
 ### Story 3.3 — Pending approvals count integration
@@ -217,6 +257,16 @@ By the end of Phase 1, the platform must support:
 
 **Acceptance criteria**
 - Count matches approvals module source of truth.
+
+**Execution checklist (live status)**
+- [x] Implementation merged (dashboard pending approvals query layer + dashboard count wiring)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 3.3 complete
+
+**Assumptions documented**
+- Pending approvals in dashboard represent approvals currently actionable by the viewing user (or all pending for `ADMIN`/`AGENCY_OWNER`).
+- Actionability matches approvals module role-assignment logic: policy `requiredRoles` intersect with user global/client-scoped `roleAssignments`.
+- Assignment-scoped dashboard roles still see counts only for clients already in their dashboard scope.
 
 ---
 
@@ -242,6 +292,11 @@ By the end of Phase 1, the platform must support:
 - Returns stable typed payload.
 - Handles missing data safely.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (`src/lib/ai/context-builder.ts` + runtime zod schema + unit tests)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 4.1 complete
+
 ---
 
 ### Story 4.2 — Read-only context API endpoint
@@ -261,6 +316,15 @@ By the end of Phase 1, the platform must support:
 - Client users only fetch safe subset (if enabled).
 - Unauthorized calls return 403.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (`src/app/api/ai/context/[clientId]/route.ts` + authz/assignment checks + response envelope)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 4.2 complete
+
+**Behavior note (Phase 1)**
+- Client safe-subset delivery is intentionally not enabled yet (`AI_CONTEXT_CLIENT_SAFE_SUBSET_ENABLED` defaults to disabled).
+- Client-equivalent roles receive an explicit `403` with code `CLIENT_CONTEXT_SAFE_SUBSET_UNSUPPORTED` until safe-subset rollout is enabled.
+
 ---
 
 ### Story 4.3 — Module assistant placeholder hook
@@ -278,6 +342,14 @@ By the end of Phase 1, the platform must support:
 **Acceptance criteria**
 - Endpoint returns schema-valid recommendation objects.
 - No write/mutation actions are performed.
+
+**Execution checklist (live status)**
+- [x] Implementation merged (`src/app/api/ai/lens/recommend/route.ts` + placeholder rule-based recommender + envelope schemas)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 4.3 complete
+
+**Behavior note (Phase 1)**
+- Endpoint is non-executing and non-mutating for business entities; it only returns preview recommendations and logs safe interaction metadata.
 
 ---
 
@@ -298,6 +370,11 @@ By the end of Phase 1, the platform must support:
 **Acceptance criteria**
 - Features can be toggled per environment.
 
+**Execution checklist (live status)**
+- [x] Implementation merged (typed flag utility + env toggles + RBAC/onboarding/dashboard/AI context gating)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 5.1 complete
+
 ---
 
 ### Story 5.2 — Test suite additions
@@ -313,6 +390,12 @@ By the end of Phase 1, the platform must support:
 - CI test run passes.
 - New tests fail when authz boundaries are violated.
 
+**Execution checklist (live status)**
+- [x] Test coverage audited against Story 5.2 acceptance criteria and gaps identified
+- [x] Implementation merged (permission + health-score unit edges, onboarding/context integration hardening, and visibility-boundary regression tests)
+- [x] Validation passed (`bun run test`, `bunx tsc --noEmit`, and `bun run build`)
+- [x] Story 5.2 complete
+
 ---
 
 ### Story 5.3 — Documentation and migration runbook
@@ -325,6 +408,11 @@ By the end of Phase 1, the platform must support:
 
 **Acceptance criteria**
 - Team can perform migration and rollback from docs alone.
+
+**Execution checklist (live status)**
+- [x] Implementation merged (Phase 1 operations + migration runbook covering RBAC v2, onboarding v2, AI context ops, flags, and rollback scenarios)
+- [x] Validation passed (`bunx tsc --noEmit`, `bun run test`, and `bun run build`)
+- [x] Story 5.3 complete
 
 ---
 

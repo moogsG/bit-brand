@@ -24,7 +24,12 @@ export function MessagesThread({
 
 	// Sort ascending for display
 	const sorted = useMemo(
-		() => [...items].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
+		() =>
+			[...items].sort(
+				(a, b) =>
+					(a.createdAt ? a.createdAt.getTime() : 0) -
+					(b.createdAt ? b.createdAt.getTime() : 0),
+			),
 		[items],
 	);
 
@@ -39,7 +44,7 @@ export function MessagesThread({
 			id: `temp-${Date.now()}`,
 			clientId,
 			body: input.trim(),
-			createdAt: Date.now(),
+			createdAt: new Date(),
 			senderId: "me",
 			senderRole: currentRole,
 			readAt: null,

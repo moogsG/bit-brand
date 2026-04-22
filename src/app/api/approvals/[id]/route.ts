@@ -1,15 +1,19 @@
+import { and, eq, isNull, or } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { getApprovalDisplayContext } from "@/lib/approvals/metadata";
 import { auth } from "@/lib/auth";
+import { can, resolvePermissionRole } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 import { db } from "@/lib/db";
+import type { NewAuditLog } from "@/lib/db/schema";
 import {
+	approvalPolicies,
 	approvals,
+	auditLogs,
+	contentBriefs,
 	roleAssignments,
 	roles,
-	approvalPolicies,
-	auditLogs,
 } from "@/lib/db/schema";
-import { eq, and, or, isNull } from "drizzle-orm";
-import { NextResponse } from "next/server";
-import type { NewAuditLog } from "@/lib/db/schema";
 
 interface RouteContext {
 	params: Promise<{ id: string }>;
@@ -34,7 +38,32 @@ export async function GET(request: Request, context: RouteContext) {
 		return NextResponse.json({ error: "Not found" }, { status: 404 });
 	}
 
-	return NextResponse.json(approval);
+	const accessContext = await getClientAccessContext(
+		session,
+		approval.clientId,
+	);
+	if (
+		!can("approvals", "view", {
+			session,
+			clientId: approval.clientId,
+			...accessContext,
+		})
+	) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
+
+	const display = getApprovalDisplayContext({
+		resourceType: approval.resourceType,
+		resourceId: approval.resourceId,
+		metadata: approval.metadata,
+	});
+
+	return NextResponse.json({
+		...approval,
+		resourceLabel: display.resourceLabel,
+		contextTitle: display.title,
+		contextSubtitle: display.subtitle,
+	});
 }
 
 // PATCH /api/approvals/[id] - Approve or reject
@@ -60,6 +89,20 @@ export async function PATCH(request: Request, context: RouteContext) {
 			return NextResponse.json({ error: "Not found" }, { status: 404 });
 		}
 
+		const accessContext = await getClientAccessContext(
+			session,
+			approval.clientId,
+		);
+		if (
+			!can("approvals", "view", {
+				session,
+				clientId: approval.clientId,
+				...accessContext,
+			})
+		) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+
 		if (approval.status !== "PENDING") {
 			return NextResponse.json(
 				{ error: "Approval is not pending" },
@@ -75,13 +118,23 @@ export async function PATCH(request: Request, context: RouteContext) {
 			.get();
 
 		if (!policy) {
-			return NextResponse.json(
-				{ error: "Policy not found" },
-				{ status: 404 },
-			);
+			return NextResponse.json({ error: "Policy not found" }, { status: 404 });
 		}
 
 		const requiredRoles = JSON.parse(policy.requiredRoles) as string[];
+		const role = resolvePermissionRole({ session });
+		const isFullAccessRole = role === "ADMIN" || role === "AGENCY_OWNER";
+
+		if (
+			action !== "cancel" &&
+			!can("approvals", "approve", {
+				session,
+				clientId: approval.clientId,
+				...accessContext,
+			})
+		) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
 
 		// Check if user has required role (global or client-scoped)
 		const userRoles = await db
@@ -102,7 +155,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 			.all();
 
 		const hasPermission =
-			session.user.role === "ADMIN" ||
+			isFullAccessRole ||
 			userRoles.some((r) => requiredRoles.includes(r.roleName));
 
 		if (!hasPermission && action !== "cancel") {
@@ -110,7 +163,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 		}
 
 		// Update approval
-		let updateData: any = {};
+		let updateData: Partial<typeof approvals.$inferInsert> = {};
 		if (action === "approve") {
 			updateData = {
 				status: "APPROVED",
@@ -141,6 +194,32 @@ export async function PATCH(request: Request, context: RouteContext) {
 			.set(updateData)
 			.where(eq(approvals.id, id))
 			.returning();
+
+		if (approval.resourceType === "CONTENT_BRIEF") {
+			const syncedBriefStatus =
+				action === "approve"
+					? "APPROVED"
+					: action === "reject"
+						? "AWAITING_CLIENT_INPUT"
+						: null;
+
+			if (syncedBriefStatus) {
+				await db
+					.update(contentBriefs)
+					.set({
+						status: syncedBriefStatus,
+						updatedBy: session.user.id,
+						updatedAt: new Date(),
+					})
+					.where(
+						and(
+							eq(contentBriefs.id, approval.resourceId),
+							eq(contentBriefs.clientId, approval.clientId),
+						),
+					)
+					.run();
+			}
+		}
 
 		// Audit log
 		const auditEntry: NewAuditLog = {

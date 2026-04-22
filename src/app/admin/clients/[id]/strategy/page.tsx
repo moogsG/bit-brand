@@ -4,8 +4,9 @@ import { db } from "@/lib/db";
 import { clients, seoStrategies } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import Link from "next/link";
-import { ArrowLeft, Plus, FileText } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { AdminStrategyActions } from "@/components/admin/admin-strategy-actions";
 
@@ -65,6 +66,8 @@ export default async function AdminStrategyPage({
           </div>
         </div>
 
+        <NorthStarRibbon clientId={id} onboardingHref={`/admin/clients/${id}/onboarding`} />
+
         {strategies.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center space-y-2">
@@ -89,7 +92,9 @@ export default async function AdminStrategyPage({
                     <p className="text-xs text-muted-foreground">
                       {s.publishedAt
                         ? `Published ${new Date(s.publishedAt).toLocaleDateString()}`
-                        : `Created ${new Date(s.createdAt ?? Date.now()).toLocaleDateString()}`}
+                        : s.createdAt
+                          ? `Created ${new Date(s.createdAt).toLocaleDateString()}`
+                          : "Created —"}
                     </p>
                   </div>
                 </div>

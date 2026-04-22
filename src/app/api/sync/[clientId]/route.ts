@@ -18,6 +18,8 @@ import { syncMozData } from "@/lib/integrations/moz";
 import { syncRankscaleData } from "@/lib/integrations/rankscale";
 import { syncDataForSeoData } from "@/lib/integrations/dataforseo";
 import type { SyncResult } from "@/lib/integrations/types";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 type DataSourceType = "GA4" | "GSC" | "MOZ" | "RANKSCALE" | "DATAFORSEO";
 
@@ -57,11 +59,16 @@ export async function POST(
 ) {
 	// 1. Auth check — Admin only
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	const { clientId } = await params;
+	const accessContext = await getClientAccessContext(session, clientId);
+
+	if (!can("sync", "execute", { session, clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
 
 	// 2. Verify client exists
 	const client = await db

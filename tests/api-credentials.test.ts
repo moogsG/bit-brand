@@ -45,10 +45,10 @@ describe("API Credentials Endpoints - Smoke Tests", () => {
 		vi.clearAllMocks();
 	});
 
-	describe("GET /api/settings/api-credentials", () => {
+		describe("GET /api/settings/api-credentials", () => {
 		it("should return 401 for unauthenticated requests", async () => {
 			const { auth } = await import("@/lib/auth");
-			vi.mocked(auth).mockResolvedValue(null);
+			vi.mocked(auth as any).mockResolvedValue(null);
 
 			const { GET } = await import(
 				"@/app/api/settings/api-credentials/route"
@@ -60,7 +60,7 @@ describe("API Credentials Endpoints - Smoke Tests", () => {
 			expect(data.error).toBe("Unauthorized");
 		});
 
-		it("should return 401 for non-admin users", async () => {
+		it("should return 403 for unauthorized roles", async () => {
 			const { auth } = await import("@/lib/auth");
 			vi.mocked(auth).mockResolvedValue({
 				user: { id: "user-1", email: "client@test.com", role: "CLIENT" },
@@ -71,7 +71,7 @@ describe("API Credentials Endpoints - Smoke Tests", () => {
 			);
 			const response = await GET();
 
-			expect(response.status).toBe(401);
+			expect(response.status).toBe(403);
 		});
 
 		it("should return masked credentials for admin users", async () => {
@@ -108,10 +108,10 @@ describe("API Credentials Endpoints - Smoke Tests", () => {
 		});
 	});
 
-	describe("POST /api/settings/api-credentials", () => {
+		describe("POST /api/settings/api-credentials", () => {
 		it("should return 401 for unauthenticated requests", async () => {
 			const { auth } = await import("@/lib/auth");
-			vi.mocked(auth).mockResolvedValue(null);
+			vi.mocked(auth as any).mockResolvedValue(null);
 
 			const { POST } = await import(
 				"@/app/api/settings/api-credentials/route"
@@ -213,10 +213,10 @@ describe("API Credentials Endpoints - Smoke Tests", () => {
 		});
 	});
 
-	describe("DELETE /api/settings/api-credentials", () => {
+		describe("DELETE /api/settings/api-credentials", () => {
 		it("should return 401 for unauthenticated requests", async () => {
 			const { auth } = await import("@/lib/auth");
-			vi.mocked(auth).mockResolvedValue(null);
+			vi.mocked(auth as any).mockResolvedValue(null);
 
 			const { DELETE } = await import(
 				"@/app/api/settings/api-credentials/route"

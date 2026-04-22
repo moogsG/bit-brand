@@ -1,9 +1,10 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CheckCircle, Clock, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, XCircle, Clock } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getApprovalDisplayContext } from "@/lib/approvals/metadata";
 import type { Approval } from "@/lib/db/schema";
 
 interface PendingApprovalsCardProps {
@@ -38,9 +39,11 @@ export function PendingApprovalsCard({
 				) : (
 					<div className="divide-y divide-border">
 						{pendingApprovals.map((approval) => {
-							const metadata = approval.metadata
-								? JSON.parse(approval.metadata)
-								: {};
+							const display = getApprovalDisplayContext({
+								resourceType: approval.resourceType,
+								resourceId: approval.resourceId,
+								metadata: approval.metadata,
+							});
 							return (
 								<div
 									key={approval.id}
@@ -48,8 +51,13 @@ export function PendingApprovalsCard({
 								>
 									<div className="min-w-0 flex-1">
 										<p className="text-sm font-medium truncate">
-											{approval.resourceType} - {metadata.title || "Untitled"}
+											{display.resourceLabel} - {display.title}
 										</p>
+										{display.subtitle ? (
+											<p className="text-[11px] text-muted-foreground truncate">
+												{display.subtitle}
+											</p>
+										) : null}
 										<p className="text-xs text-muted-foreground">
 											Requested{" "}
 											{approval.createdAt

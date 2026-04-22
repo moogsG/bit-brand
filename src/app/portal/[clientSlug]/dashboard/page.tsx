@@ -1,25 +1,32 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import {
-	clients,
-	ga4Metrics,
-	gscMetrics,
-	mozMetrics,
-	aiVisibility,
-} from "@/lib/db/schema";
-import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
 	BarChart2,
 	MousePointerClick,
-	TrendingDown,
 	Shield,
+	TrendingDown,
 } from "lucide-react";
+import { redirect } from "next/navigation";
+import { AiVisibilityCard } from "@/components/portal/ai-visibility-card";
+import { EeatScoreCard } from "@/components/portal/eeat-score-card";
 import { KpiCard } from "@/components/portal/kpi-card";
-import { TrafficChart } from "@/components/portal/traffic-chart";
 import { SearchPerformanceChart } from "@/components/portal/search-performance-chart";
 import { TopKeywordsTable } from "@/components/portal/top-keywords-table";
-import { AiVisibilityCard } from "@/components/portal/ai-visibility-card";
+import { TrafficChart } from "@/components/portal/traffic-chart";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import {
+	aiVisibility,
+	clients,
+	eeatScores,
+	ga4Metrics,
+	gscMetrics,
+	mozMetrics,
+} from "@/lib/db/schema";
+import {
+	type EeatRecommendation,
+	parseEeatRecommendationsJson,
+} from "@/lib/eeat/scoring";
+import { phase2Flags } from "@/lib/flags";
 
 function toDateStr(date: Date): string {
 	return date.toISOString().split("T")[0];
@@ -37,9 +44,46 @@ function sumField<T>(rows: T[], field: keyof T): number {
 	}, 0);
 }
 
-function avgField<T>(rows: T[], field: keyof T): number {
-	if (rows.length === 0) return 0;
-	return sumField(rows, field) / rows.length;
+function parseEeatFactors(
+	raw: string | null,
+): Array<{ label: string; score: number }> {
+	if (!raw) {
+		return [];
+	}
+
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		if (!Array.isArray(parsed)) {
+			return [];
+		}
+
+		return parsed.flatMap((item) => {
+			if (typeof item !== "object" || item === null || Array.isArray(item)) {
+				return [];
+			}
+
+			const label =
+				typeof item.label === "string" && item.label.trim().length > 0
+					? item.label
+					: null;
+			const score =
+				typeof item.score === "number" && Number.isFinite(item.score)
+					? item.score
+					: null;
+
+			if (!label || score === null) {
+				return [];
+			}
+
+			return [{ label, score }];
+		});
+	} catch {
+		return [];
+	}
+}
+
+function parseRecommendations(raw: string | null): EeatRecommendation[] {
+	return parseEeatRecommendationsJson(raw);
 }
 
 export default async function DashboardPage({
@@ -207,6 +251,17 @@ export default async function DashboardPage({
 		.limit(1)
 		.get();
 
+	const eeatScoringEnabled = phase2Flags.eeatScoringV1();
+	const eeatLatest = eeatScoringEnabled
+		? await db
+				.select()
+				.from(eeatScores)
+				.where(eq(eeatScores.clientId, client.id))
+				.orderBy(desc(eeatScores.createdAt))
+				.limit(1)
+				.get()
+		: null;
+
 	// ─── KPI calculations ─────────────────────────────────────────────────────
 	const organicSessionsCurrent = sumField(ga4Current, "organicSessions");
 	const organicSessionsPrevious = sumField(ga4Previous, "organicSessions");
@@ -257,6 +312,11 @@ export default async function DashboardPage({
 	const noGsc = gscCurrent.length === 0 && gscTrend.length === 0;
 	const noMoz = !mozLatest;
 	const noAiVis = !aiVis;
+	const noEeat = !eeatLatest;
+	const eeatFactors = parseEeatFactors(eeatLatest?.factorBreakdown ?? null);
+	const eeatRecommendations = parseRecommendations(
+		eeatLatest?.recommendations ?? null,
+	);
 
 	return (
 		<div className="space-y-6 max-w-7xl">
@@ -325,6 +385,17 @@ export default async function DashboardPage({
 					noData={noAiVis}
 				/>
 			</div>
+
+			{eeatScoringEnabled ? (
+				<EeatScoreCard
+					overallScore={eeatLatest?.overallScore ?? null}
+					scoreVersion={eeatLatest?.scoreVersion ?? null}
+					factors={eeatFactors}
+					recommendations={eeatRecommendations}
+					updatedAt={eeatLatest?.createdAt ?? null}
+					noData={noEeat}
+				/>
+			) : null}
 		</div>
 	);
 }

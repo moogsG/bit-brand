@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { dataSources, clients } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const dataSourceTypes = [
 	"GA4",
@@ -24,11 +26,16 @@ export async function GET(
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	const { id } = await params;
+	const accessContext = await getClientAccessContext(session, id);
+
+	if (!can("dataSources", "view", { session, clientId: id, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
 
 	// Verify client exists
 	const client = await db
@@ -54,11 +61,16 @@ export async function POST(
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	const { id } = await params;
+	const accessContext = await getClientAccessContext(session, id);
+
+	if (!can("dataSources", "edit", { session, clientId: id, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
 
 	try {
 		const body = await req.json();

@@ -4,11 +4,15 @@ import { apiCredentials } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { NextResponse } from "next/server";
+import { can } from "@/lib/auth/authorize";
 
 export async function GET() {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
+	if (!can("apiCredentials", "view", { session })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const creds = db.select().from(apiCredentials).all();
@@ -48,8 +52,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
+	if (!can("apiCredentials", "edit", { session })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const body = await request.json();
@@ -100,8 +107,11 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
+	if (!can("apiCredentials", "edit", { session })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const { searchParams } = new URL(request.url);

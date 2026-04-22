@@ -6,6 +6,7 @@ import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth/config";
 import { NextResponse } from "next/server";
 import type { NextAuthRequest } from "next-auth";
+import { can } from "@/lib/auth/authorize";
 
 const { auth } = NextAuth(authConfig);
 
@@ -23,19 +24,20 @@ export default auth((req: NextAuthRequest) => {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  const role = (session.user as { role?: string }).role;
+  const user = session.user as { role?: string; rawRole?: string };
+  const authz = { role: user.role, rawRole: user.rawRole };
 
-  // Admin routes — ADMIN only
-  if (pathname.startsWith("/admin") && role !== "ADMIN") {
+  // Admin routes
+  if (pathname.startsWith("/admin") && !can("admin", "view", authz)) {
     return NextResponse.redirect(new URL("/portal", req.url));
   }
 
   // Root redirect based on role
   if (pathname === "/") {
-    if (role === "ADMIN") {
+    if (can("admin", "view", authz)) {
       return NextResponse.redirect(new URL("/admin/dashboard", req.url));
     }
-    if (role === "CLIENT") {
+    if (can("portal", "view", authz)) {
       return NextResponse.redirect(new URL("/portal", req.url));
     }
   }

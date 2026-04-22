@@ -77,7 +77,7 @@ async function seedAdmin() {
 			email: adminEmail,
 			name: "BBA Admin",
 			passwordHash,
-			role: "ADMIN",
+			role: "AGENCY_OWNER",
 		})
 		.returning();
 
@@ -131,7 +131,12 @@ async function seedClientUser(clientId: string) {
 		const passwordHash = await bcrypt.hash("client123!", 12);
 		const [u] = await db
 			.insert(users)
-			.values({ email, name: "Acme Corp Client", passwordHash, role: "CLIENT" })
+			.values({
+				email,
+				name: "Acme Corp Client",
+				passwordHash,
+				role: "CLIENT_ADMIN",
+			})
 			.returning();
 		clientUser = u;
 		console.log("✅ Client user created — client@acmecorp.com / client123!");
@@ -1010,6 +1015,44 @@ async function seed() {
 async function seedRoles() {
 	const defaultRoles = [
 		{
+			name: "AGENCY_OWNER",
+			description: "Agency owner with full platform access",
+			permissions: JSON.stringify(["*"]),
+			isSystem: true,
+		},
+		{
+			name: "ACCOUNT_MANAGER",
+			description: "Manages assigned client accounts and operations",
+			permissions: JSON.stringify([
+				"manage_clients",
+				"manage_reports",
+				"manage_tasks",
+			]),
+			isSystem: true,
+		},
+		{
+			name: "STRATEGIST",
+			description: "Builds strategy and report deliverables",
+			permissions: JSON.stringify([
+				"create_reports",
+				"create_strategies",
+				"manage_keywords",
+			]),
+			isSystem: true,
+		},
+		{
+			name: "CLIENT_ADMIN",
+			description: "Client power user with collaboration access",
+			permissions: JSON.stringify(["view_portal", "manage_feedback"]),
+			isSystem: true,
+		},
+		{
+			name: "CLIENT_VIEWER",
+			description: "Client read-only portal access",
+			permissions: JSON.stringify(["view_portal"]),
+			isSystem: true,
+		},
+		{
 			name: "MARKETING_LEAD",
 			description: "Marketing team lead with approval authority",
 			permissions: JSON.stringify([
@@ -1066,6 +1109,14 @@ async function seedApprovalPolicies() {
 			description: "Approval required to publish SEO strategies",
 			resourceType: "STRATEGY",
 			action: "PUBLISH",
+			requiredRoles: JSON.stringify(["MARKETING_LEAD", "ADMIN"]),
+			isActive: true,
+		},
+		{
+			name: "content_brief_approve",
+			description: "Approval required for content briefs before execution",
+			resourceType: "CONTENT_BRIEF",
+			action: "APPROVE",
 			requiredRoles: JSON.stringify(["MARKETING_LEAD", "ADMIN"]),
 			isActive: true,
 		},

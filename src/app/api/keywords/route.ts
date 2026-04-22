@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { keywordResearch, clients } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const createKeywordSchema = z.object({
   clientId: z.string().min(1),
@@ -31,16 +33,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "clientId is required" }, { status: 400 });
   }
 
-  // If client user, verify they belong to this client
-  if (session.user.role === "CLIENT") {
-    const client = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(eq(clients.id, clientId))
-      .get();
-    if (!client) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
+  const client = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .get();
+  if (!client) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const accessContext = await getClientAccessContext(session, clientId);
+
+  if (!can("keywords", "view", { session, clientId, ...accessContext })) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const rows = await db
@@ -54,13 +59,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const body = await req.json() as unknown;
     const parsed = createKeywordSchema.parse(body);
+
+    const accessContext = await getClientAccessContext(session, parsed.clientId);
+
+    if (!can("keywords", "edit", { session, clientId: parsed.clientId, ...accessContext })) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const [row] = await db
       .insert(keywordResearch)

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { clients, clientUsers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { can } from "@/lib/auth/authorize";
 
 export default async function PortalPage() {
   const session = await auth();
@@ -11,8 +12,8 @@ export default async function PortalPage() {
     redirect("/login");
   }
 
-  // ADMIN: redirect to admin dashboard instead
-  if (session.user.role === "ADMIN") {
+  // Agency roles: redirect to admin dashboard
+  if (can("admin", "view", { session })) {
     redirect("/admin/dashboard");
   }
 

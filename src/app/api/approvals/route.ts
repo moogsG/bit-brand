@@ -1,15 +1,28 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import {
-	approvals,
-	approvalPolicies,
-	roleAssignments,
-	roles,
-	auditLogs,
-} from "@/lib/db/schema";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { and, eq, inArray, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { getApprovalDisplayContext } from "@/lib/approvals/metadata";
+import { auth } from "@/lib/auth";
+import { can, resolvePermissionRole } from "@/lib/auth/authorize";
+import {
+	getAssignedClientIdsForUser,
+	getClientAccessContext,
+} from "@/lib/auth/client-access";
+import { db } from "@/lib/db";
 import type { NewApproval, NewAuditLog } from "@/lib/db/schema";
+import {
+	approvalPolicies,
+	approvals,
+	auditLogs,
+	clientUsers,
+} from "@/lib/db/schema";
+
+const approvalStatusSchema = z.enum([
+	"PENDING",
+	"APPROVED",
+	"REJECTED",
+	"CANCELLED",
+]);
 
 // GET /api/approvals - List approvals (optionally filtered)
 export async function GET(request: Request) {
@@ -23,20 +36,83 @@ export async function GET(request: Request) {
 	const clientId = searchParams.get("clientId");
 	const resourceType = searchParams.get("resourceType");
 
-	let query = db.select().from(approvals);
-
-	const conditions = [];
-	if (status) conditions.push(eq(approvals.status, status as any));
-	if (clientId) conditions.push(eq(approvals.clientId, clientId));
-	if (resourceType)
-		conditions.push(eq(approvals.resourceType, resourceType as any));
-
-	if (conditions.length > 0) {
-		query = query.where(and(...conditions)) as any;
+	if (!can("approvals", "view", { session })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
-	const results = await query.all();
-	return NextResponse.json(results);
+	const conditions: SQL[] = [];
+	if (status) {
+		const parsedStatus = approvalStatusSchema.safeParse(status);
+		if (!parsedStatus.success) {
+			return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+		}
+		conditions.push(eq(approvals.status, parsedStatus.data));
+	}
+
+	if (clientId) {
+		const accessContext = await getClientAccessContext(session, clientId);
+		if (!can("approvals", "view", { session, clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+
+		conditions.push(eq(approvals.clientId, clientId));
+	} else {
+		const role = resolvePermissionRole({ session });
+		if (role !== "ADMIN" && role !== "AGENCY_OWNER") {
+			const [memberships, assignmentClientIds] = await Promise.all([
+				db
+					.select({ clientId: clientUsers.clientId })
+					.from(clientUsers)
+					.where(eq(clientUsers.userId, session.user.id))
+					.all(),
+				getAssignedClientIdsForUser(session.user.id),
+			]);
+
+			const scopedClientIds = new Set<string>([
+				...memberships.map((membership) => membership.clientId),
+				...assignmentClientIds,
+			]);
+
+			if (session.user.clientId) {
+				scopedClientIds.add(session.user.clientId);
+			}
+
+			const allowedClientIds = [...scopedClientIds];
+			if (allowedClientIds.length === 0) {
+				return NextResponse.json([]);
+			}
+
+			conditions.push(inArray(approvals.clientId, allowedClientIds));
+		}
+	}
+
+	if (resourceType) conditions.push(eq(approvals.resourceType, resourceType));
+
+	const results =
+		conditions.length > 0
+			? await db
+					.select()
+					.from(approvals)
+					.where(and(...conditions))
+					.all()
+			: await db.select().from(approvals).all();
+
+	const enriched = results.map((approval) => {
+		const display = getApprovalDisplayContext({
+			resourceType: approval.resourceType,
+			resourceId: approval.resourceId,
+			metadata: approval.metadata,
+		});
+
+		return {
+			...approval,
+			resourceLabel: display.resourceLabel,
+			contextTitle: display.title,
+			contextSubtitle: display.subtitle,
+		};
+	});
+
+	return NextResponse.json(enriched);
 }
 
 // POST /api/approvals - Create approval request
@@ -55,6 +131,15 @@ export async function POST(request: Request) {
 			clientId,
 			metadata = {},
 		} = body;
+
+		if (clientId) {
+			const accessContext = await getClientAccessContext(session, clientId);
+			if (!can("approvals", "edit", { session, clientId, ...accessContext })) {
+				return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+			}
+		} else if (!can("approvals", "edit", { session })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
 
 		// Find the policy
 		const policy = await db

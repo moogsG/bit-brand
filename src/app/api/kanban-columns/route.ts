@@ -1,7 +1,9 @@
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 import { db } from "@/lib/db";
 import { kanbanColumns, auditLogs } from "@/lib/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import type { NewKanbanColumn, NewAuditLog } from "@/lib/db/schema";
 
@@ -22,6 +24,11 @@ export async function GET(request: Request) {
 		);
 	}
 
+	const accessContext = await getClientAccessContext(session, clientId);
+	if (!can("kanban", "view", { session, clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
+
 	const results = await db
 		.select()
 		.from(kanbanColumns)
@@ -39,10 +46,6 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	if (session.user.role !== "ADMIN") {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-	}
-
 	try {
 		const body = await request.json();
 		const { clientId, name, position = 0, color, isDefault = false } = body;
@@ -52,6 +55,11 @@ export async function POST(request: Request) {
 				{ error: "clientId and name are required" },
 				{ status: 400 },
 			);
+		}
+
+		const accessContext = await getClientAccessContext(session, clientId);
+		if (!can("kanban", "edit", { session, clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 		}
 
 		const newColumn: NewKanbanColumn = {

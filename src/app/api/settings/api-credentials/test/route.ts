@@ -4,11 +4,15 @@ import { apiCredentials } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { decrypt } from "@/lib/crypto";
 import { NextResponse } from "next/server";
+import { can } from "@/lib/auth/authorize";
 
 export async function POST(request: Request) {
 	const session = await auth();
-	if (!session || session.user.role !== "ADMIN") {
+	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
+	if (!can("apiCredentials", "execute", { session })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	const { provider } = await request.json();

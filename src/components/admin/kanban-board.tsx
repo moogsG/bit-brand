@@ -1,11 +1,12 @@
 "use client";
 
+import { Link2, MoreVertical, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, MoreVertical } from "lucide-react";
-import type { Task, KanbanColumn } from "@/lib/db/schema";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { KanbanColumn, Task } from "@/lib/db/schema";
 
 interface KanbanBoardProps {
 	columns: KanbanColumn[];
@@ -34,6 +35,42 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 			default:
 				return "bg-gray-500";
 		}
+	};
+
+	const getLinkedResourceHref = (task: Task): string | null => {
+		if (!task.linkedResourceType || !task.linkedResourceId) {
+			return null;
+		}
+
+		switch (task.linkedResourceType.trim().toUpperCase()) {
+			case "REPORT":
+				return `/admin/clients/${clientId}/reports/${task.linkedResourceId}`;
+			case "STRATEGY":
+				return `/admin/clients/${clientId}/strategy/${task.linkedResourceId}`;
+			case "KEYWORDS":
+				return `/admin/clients/${clientId}/keywords`;
+			case "OPPORTUNITY":
+				return `/admin/clients/${clientId}/opportunities`;
+			case "TECHNICAL_AUDIT":
+				return `/admin/clients/${clientId}/technical-audits`;
+			default:
+				return null;
+		}
+	};
+
+	const getLinkedResourceLabel = (task: Task): string | null => {
+		if (
+			task.linkedResourceLabel &&
+			task.linkedResourceLabel.trim().length > 0
+		) {
+			return task.linkedResourceLabel.trim();
+		}
+
+		if (task.linkedResourceType && task.linkedResourceId) {
+			return `${task.linkedResourceType}: ${task.linkedResourceId}`;
+		}
+
+		return null;
 	};
 
 	async function handleAddColumn() {
@@ -127,14 +164,35 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 													{task.description}
 												</p>
 											)}
+											{getLinkedResourceLabel(task) ? (
+												<div className="text-xs text-muted-foreground">
+													<div className="inline-flex items-center gap-1">
+														<Link2 className="h-3 w-3" />
+														<span>Linked</span>
+													</div>{" "}
+													{getLinkedResourceHref(task) ? (
+														<Link
+															href={getLinkedResourceHref(task) ?? "#"}
+															className="text-primary hover:underline"
+														>
+															{getLinkedResourceLabel(task)}
+														</Link>
+													) : (
+														<span>{getLinkedResourceLabel(task)}</span>
+													)}
+												</div>
+											) : null}
 											<div className="flex items-center justify-between text-xs text-muted-foreground">
 												{task.dueDate && (
 													<span>
 														Due{" "}
-														{new Date(task.dueDate).toLocaleDateString("en-US", {
-															month: "short",
-															day: "numeric",
-														})}
+														{new Date(task.dueDate).toLocaleDateString(
+															"en-US",
+															{
+																month: "short",
+																day: "numeric",
+															},
+														)}
 													</span>
 												)}
 												<Badge variant="outline" className="text-xs">
@@ -144,14 +202,14 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 										</div>
 									</Card>
 								))}
-									<Button
-										variant="ghost"
-										size="sm"
-										className="w-full justify-start text-muted-foreground"
-										onClick={() => handleAddTask(column.id)}
-									>
-										<Plus className="h-4 w-4 mr-2" />
-										Add task
+								<Button
+									variant="ghost"
+									size="sm"
+									className="w-full justify-start text-muted-foreground"
+									onClick={() => handleAddTask(column.id)}
+								>
+									<Plus className="h-4 w-4 mr-2" />
+									Add task
 								</Button>
 							</CardContent>
 						</Card>
