@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { monthlyReports, clients, clientUsers, users } from "@/lib/db/schema";
+import {
+	monthlyReports,
+	clients,
+	clientUsers,
+	users,
+	auditLogs,
+} from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendReportPublishedEmail } from "@/lib/email";
+import {
+	requiresApproval,
+	createApprovalRequest,
+	getApprovalStatus,
+} from "@/lib/approvals";
+import type { NewAuditLog } from "@/lib/db/schema";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const updateReportSchema = z.object({
   sections: z.record(z.string(), z.unknown()).optional(),
@@ -32,9 +46,21 @@ export async function GET(
     return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
 
-  if (session.user.role !== "ADMIN" && row.status !== "PUBLISHED") {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+	const accessContext = await getClientAccessContext(session, row.clientId);
+
+	if (!can("reports", "view", { session, clientId: row.clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
+
+	if (
+		!can("reports", "edit", {
+			session,
+			clientId: row.clientId,
+			...accessContext,
+		}) && row.status !== "PUBLISHED"
+	) {
+		return NextResponse.json({ error: "Not found" }, { status: 404 });
+	}
 
   return NextResponse.json(row);
 }
@@ -44,7 +70,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -54,6 +80,29 @@ export async function PATCH(
     const body = await req.json() as unknown;
     const parsed = updateReportSchema.parse(body);
 
+    const report = await db
+      .select({ clientId: monthlyReports.clientId })
+      .from(monthlyReports)
+      .where(eq(monthlyReports.id, id))
+      .get();
+
+    if (!report) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
+
+		const accessContext = await getClientAccessContext(session, report.clientId);
+
+		if (!can("reports", "edit", { session, clientId: report.clientId, ...accessContext })) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+
+		if (
+			parsed.status === "PUBLISHED" &&
+			!can("reports", "publish", { session, clientId: report.clientId, ...accessContext })
+		) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+
     const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
     };
@@ -61,11 +110,76 @@ export async function PATCH(
     if (parsed.sections !== undefined) {
       updateData.sections = JSON.stringify(parsed.sections);
     }
-    if (parsed.status !== undefined) {
-      updateData.status = parsed.status;
-      if (parsed.status === "PUBLISHED") {
+
+    // Check if publishing requires approval
+    if (parsed.status === "PUBLISHED") {
+      const reportDetails = await db
+        .select()
+        .from(monthlyReports)
+        .where(eq(monthlyReports.id, id))
+        .get();
+
+      if (!reportDetails) {
+        return NextResponse.json({ error: "Report not found" }, { status: 404 });
+      }
+
+      const needsApproval = await requiresApproval("REPORT", "PUBLISH");
+
+      if (needsApproval) {
+        // Check if already approved
+        const approvalStatus = await getApprovalStatus("REPORT", id);
+
+        if (approvalStatus === "PENDING") {
+          return NextResponse.json(
+            { error: "Approval pending for this report" },
+            { status: 400 },
+          );
+        }
+
+        if (approvalStatus === "NONE" || approvalStatus === "REJECTED") {
+          // Create approval request instead of publishing directly
+          const approvalId = await createApprovalRequest({
+            policyName: "report_publish",
+            resourceType: "REPORT",
+            resourceId: id,
+            clientId: reportDetails.clientId,
+            requestedBy: session.user.id,
+            metadata: { title: reportDetails.title },
+          });
+
+          // Audit log
+          const auditEntry: NewAuditLog = {
+            userId: session.user.id,
+            action: "REQUEST_APPROVAL",
+            resourceType: "REPORT",
+            resourceId: id,
+            clientId: reportDetails.clientId,
+            changes: JSON.stringify({ approvalId }),
+          };
+          await db.insert(auditLogs).values(auditEntry);
+
+          return NextResponse.json(
+            {
+              message: "Approval request created",
+              approvalId,
+              requiresApproval: true,
+            },
+            { status: 202 },
+          );
+        }
+
+        // If approved, proceed with publishing
+        if (approvalStatus === "APPROVED") {
+          updateData.status = parsed.status;
+          updateData.publishedAt = new Date();
+        }
+      } else {
+        // No approval required, publish directly
+        updateData.status = parsed.status;
         updateData.publishedAt = new Date();
       }
+    } else if (parsed.status !== undefined) {
+      updateData.status = parsed.status;
     }
 
     const [updated] = await db
@@ -134,11 +248,27 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
+
+  const report = await db
+    .select({ clientId: monthlyReports.clientId })
+    .from(monthlyReports)
+    .where(eq(monthlyReports.id, id))
+    .get();
+
+  if (!report) {
+    return NextResponse.json({ error: "Report not found" }, { status: 404 });
+  }
+
+	const accessContext = await getClientAccessContext(session, report.clientId);
+
+	if (!can("reports", "edit", { session, clientId: report.clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
 
   const [deleted] = await db
     .delete(monthlyReports)

@@ -4,6 +4,7 @@
  * The full auth (with DB) lives in auth/index.ts.
  */
 import type { NextAuthConfig } from "next-auth";
+import { toLegacyRole, type AppUserRole } from "./role-mapping";
 
 export const authConfig: NextAuthConfig = {
   session: { strategy: "jwt" },
@@ -14,8 +15,10 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        const rawRole = (user as { role?: string }).role;
         token.id = user.id;
-        token.role = (user as { role?: string }).role;
+        token.rawRole = rawRole;
+        token.role = toLegacyRole(rawRole);
         token.clientId = (user as { clientId?: string }).clientId;
       }
       return token;
@@ -23,7 +26,12 @@ export const authConfig: NextAuthConfig = {
     async session({ session, token }) {
       if (token) {
         session.user.id = token.id as string;
-        session.user.role = token.role as "ADMIN" | "CLIENT";
+        session.user.role = toLegacyRole(
+          (token.rawRole as string | undefined) ?? (token.role as string | undefined),
+        );
+        session.user.rawRole =
+          (token.rawRole as AppUserRole | undefined) ??
+          (token.role as AppUserRole | undefined);
         session.user.clientId = token.clientId as string | undefined;
       }
       return session;

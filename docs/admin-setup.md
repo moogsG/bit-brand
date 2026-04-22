@@ -2,6 +2,8 @@
 
 Step-by-step guide for Morgan to set up all integrations from scratch and deploy the portal to production.
 
+For Phase 1 RBAC/onboarding/AI-context rollout and migration/rollback procedures, use `docs/alchem-phase-1-operations-runbook.md`.
+
 ## Prerequisites
 
 Before starting, ensure you have:

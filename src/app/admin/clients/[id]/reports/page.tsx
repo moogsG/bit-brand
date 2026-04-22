@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { clients, monthlyReports } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -69,6 +70,8 @@ export default async function AdminReportsPage({
             <AdminReportActions clientId={id} />
           </div>
         </div>
+
+        <NorthStarRibbon clientId={id} onboardingHref={`/admin/clients/${id}/onboarding`} />
 
         {reports.length === 0 ? (
           <Card>

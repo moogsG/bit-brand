@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { seoStrategies } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const STRATEGY_SECTIONS = [
   { id: "executive-summary", title: "Executive Summary", order: 1 },
@@ -33,6 +35,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "clientId is required" }, { status: 400 });
   }
 
+  const accessContext = await getClientAccessContext(session, clientId);
+
+  if (!can("strategies", "view", { session, clientId, ...accessContext })) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   // Clients can only see published strategies
   const rows = await db
     .select()
@@ -40,7 +48,7 @@ export async function GET(req: NextRequest) {
     .where(eq(seoStrategies.clientId, clientId))
     .orderBy(desc(seoStrategies.createdAt));
 
-  const filtered = session.user.role === "ADMIN"
+  const filtered = can("strategies", "edit", { session, clientId, ...accessContext })
     ? rows
     : rows.filter((r) => r.status === "PUBLISHED");
 
@@ -49,13 +57,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const body = await req.json() as unknown;
     const parsed = createStrategySchema.parse(body);
+
+    const accessContext = await getClientAccessContext(session, parsed.clientId);
+
+    if (!can("strategies", "edit", { session, clientId: parsed.clientId, ...accessContext })) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const defaultSections = STRATEGY_SECTIONS.map((s) => ({
       ...s,

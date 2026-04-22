@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { seoStrategies } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const sectionSchema = z.object({
   id: z.string(),
@@ -39,8 +41,20 @@ export async function GET(
     return NextResponse.json({ error: "Strategy not found" }, { status: 404 });
   }
 
+  const accessContext = await getClientAccessContext(session, row.clientId);
+
+  if (!can("strategies", "view", { session, clientId: row.clientId, ...accessContext })) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   // Clients can only view published strategies
-  if (session.user.role !== "ADMIN" && row.status !== "PUBLISHED") {
+  if (
+    !can("strategies", "edit", {
+      session,
+      clientId: row.clientId,
+      ...accessContext,
+    }) && row.status !== "PUBLISHED"
+  ) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -52,7 +66,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -61,6 +75,29 @@ export async function PATCH(
   try {
     const body = await req.json() as unknown;
     const parsed = updateStrategySchema.parse(body);
+
+    const strategy = await db
+      .select({ clientId: seoStrategies.clientId })
+      .from(seoStrategies)
+      .where(eq(seoStrategies.id, id))
+      .get();
+
+    if (!strategy) {
+      return NextResponse.json({ error: "Strategy not found" }, { status: 404 });
+    }
+
+    const accessContext = await getClientAccessContext(session, strategy.clientId);
+
+    if (!can("strategies", "edit", { session, clientId: strategy.clientId, ...accessContext })) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (
+      parsed.status === "PUBLISHED" &&
+      !can("strategies", "publish", { session, clientId: strategy.clientId, ...accessContext })
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -97,11 +134,27 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
+
+  const strategy = await db
+    .select({ clientId: seoStrategies.clientId })
+    .from(seoStrategies)
+    .where(eq(seoStrategies.id, id))
+    .get();
+
+  if (!strategy) {
+    return NextResponse.json({ error: "Strategy not found" }, { status: 404 });
+  }
+
+  const accessContext = await getClientAccessContext(session, strategy.clientId);
+
+  if (!can("strategies", "edit", { session, clientId: strategy.clientId, ...accessContext })) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const [deleted] = await db
     .delete(seoStrategies)

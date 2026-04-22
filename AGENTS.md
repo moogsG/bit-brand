@@ -41,7 +41,7 @@ Single source of truth for any agent or developer picking up this codebase cold.
 
 **What it does:**
 
-- **Admin side:** Admins create client accounts, connect data sources (GA4, GSC, Ahrefs, Rankscale, SEMrush), manage keyword research, write SEO strategies and monthly reports, trigger manual data syncs, and invite client users via email.
+- **Admin side:** Admins create client accounts, connect data sources (GA4, GSC, Moz, DataForSEO, Rankscale), manage keyword research, write SEO strategies and monthly reports, trigger manual data syncs, and invite client users via email.
 - **Client side:** Clients log in to a dedicated portal scoped to their account (`/portal/[clientSlug]/`) where they can view live KPI cards, traffic/search charts, their keyword research list, the published SEO strategy, monthly reports with export functionality, and an AI visibility dashboard.
 
 **Current status:** Proof-of-concept (POC). Running on local SQLite, seeded with realistic demo data. Not yet deployed. All integrations are structurally complete but require real API credentials to pull live data.
@@ -349,21 +349,23 @@ WAL mode and foreign keys are enabled in `src/lib/db/index.ts`.
 | `clients` | Client organisations | `id`, `name`, `domain`, `slug` (unique URL key), `isActive`, `createdBy` |
 | `client_users` | Many-to-many: users ↔ clients | `clientId`, `userId` — unique pair |
 | `invitations` | Pending client invites | `email`, `clientId`, `token` (UUID), `expiresAt`, `acceptedAt` |
-| `data_sources` | Per-client integration config | `clientId`, `type` (GA4\|GSC\|AHREFS\|RANKSCALE\|SEMRUSH), `credentialsEnc`, `propertyId`, `siteUrl`, `accessToken`, `refreshToken`, `isConnected`, `lastSyncedAt`, `lastSyncError` |
+| `api_credentials` | Agency-level encrypted API keys | `provider` (GA4\|GSC\|MOZ\|DATAFORSEO\|RANKSCALE), `credentialsEnc` (AES-256-GCM encrypted), `isActive`, `lastTestedAt` |
+| `sync_jobs` | Sync job tracking | `clientId`, `source`, `status` (PENDING\|RUNNING\|SUCCESS\|FAILED\|FAILED_PERMANENT), `startedAt`, `completedAt`, `rowsInserted`, `error`, `triggeredBy` (MANUAL\|SCHEDULER\|API), `retryCount` |
+| `data_sources` | Per-client integration config | `clientId`, `type` (GA4\|GSC\|MOZ\|DATAFORSEO\|RANKSCALE), `propertyIdentifier`, `isConnected`, `lastSyncedAt`, `lastSyncError` |
 | `ga4_metrics` | Daily GA4 traffic data | `clientId`, `date` (YYYY-MM-DD), `sessions`, `users`, `newUsers`, `pageviews`, `bounceRate`, `avgSessionDuration`, `organicSessions` |
 | `gsc_metrics` | GSC search query data | `clientId`, `date`, `query`, `page`, `clicks`, `impressions`, `ctr`, `position` |
-| `ahrefs_metrics` | Ahrefs domain metrics | `clientId`, `date`, `domainRating`, `urlRating`, `backlinks`, `referringDomains`, `organicKeywords`, `organicTraffic` |
+| `moz_metrics` | Moz domain metrics | `clientId`, `date`, `domainAuthority`, `pageAuthority`, `spamScore`, `brandAuthority`, `backlinks`, `referringDomains`, `organicKeywords`, `organicTraffic` |
 | `rankscale_metrics` | AI visibility per prompt | `clientId`, `date`, `prompt`, `platform` (ChatGPT\|Perplexity\|Gemini), `isVisible`, `position`, `responseSnippet`, `visibilityScore` |
-| `semrush_metrics` | SEMrush AI visibility | `clientId`, `date`, `aiVisibilityScore`, `brandMentions`, `platform`, `competitorComparison` (JSON string) |
-| `keyword_research` | Client keyword list | `clientId`, `keyword`, `monthlyVolume`, `difficulty`, `intent` (INFORMATIONAL\|NAVIGATIONAL\|COMMERCIAL\|TRANSACTIONAL), `priority`, `currentPosition`, `targetPosition`, `status` (OPPORTUNITY\|TARGETING\|RANKING\|WON) |
+| `keyword_research` | Client keyword list | `clientId`, `keyword`, `monthlyVolume`, `difficulty`, `intent`, `priority`, `currentPosition`, `targetPosition`, `status`, `lastEnrichedAt` |
 | `seo_strategies` | Strategy documents | `clientId`, `title`, `sections` (JSON array of `{id, title, content, order}`), `status` (DRAFT\|PUBLISHED\|ARCHIVED) |
 | `monthly_reports` | Monthly SEO reports | `clientId`, `month` (1-12), `year`, `sections` (JSON with section keys each containing `adminNotes` + `autoData`), `status`, unique per `(clientId, month, year)` |
-| `ai_visibility` | Aggregated AI visibility scores | `clientId`, `date`, `overallScore`, `rankscaleScore`, `semrushScore`, `totalPromptsTested`, `promptsVisible` |
+| `ai_visibility` | Aggregated AI visibility scores | `clientId`, `date`, `overallScore`, `rankscaleScore`, `secondaryScore`, `totalPromptsTested`, `promptsVisible` |
 
 **Unique constraints to be aware of:**
+- `api_credentials`: one record per `provider`
 - `data_sources`: one record per `(clientId, type)` pair
 - `ga4_metrics`: one record per `(clientId, date)`
-- `ahrefs_metrics`: one record per `(clientId, date)`
+- `moz_metrics`: one record per `(clientId, date)`
 - `monthly_reports`: one record per `(clientId, month, year)`
 - `ai_visibility`: one record per `(clientId, date)`
 
@@ -651,49 +653,45 @@ interface SyncResult {
   success: boolean;
   rowsInserted: number;
   error?: string;
-  source: string;  // "GA4" | "GSC" | "AHREFS" | "RANKSCALE" | "SEMRUSH"
+  source: string;  // "GA4" | "GSC" | "MOZ" | "DATAFORSEO" | "RANKSCALE"
 }
 ```
 
 ### GA4 (`src/lib/integrations/ga4.ts`)
 
 - **API:** Google Analytics Data API v1 — `POST https://analyticsdata.googleapis.com/v1beta/properties/{propertyId}:runReport`
-- **Auth:** OAuth 2.0 access token stored in `dataSources.accessToken`
+- **Auth:** OAuth 2.0 access token from agency-level `apiCredentials` table
 - **Fetches:** sessions, totalUsers, newUsers, screenPageViews, bounceRate, averageSessionDuration, organicGoogleSearchSessions — grouped by date, for the last 90 days
 - **Stores:** Upserts into `ga4_metrics` table (unique per `clientId + date`)
-- **POC note:** GA4 OAuth is not fully implemented. For testing, manually obtain an access token via Google OAuth Playground and set it directly in the `dataSources.accessToken` column in the DB or via the admin data source form
 - **Date format gotcha:** GA4 API returns dates as `YYYYMMDD` — the sync function converts to `YYYY-MM-DD`
 
 ### GSC (`src/lib/integrations/gsc.ts`)
 
 - **API:** Google Webmaster Tools API v3 — `POST https://www.googleapis.com/webmasters/v3/sites/{siteUrl}/searchAnalytics/query`
-- **Auth:** OAuth 2.0 access token stored in `dataSources.accessToken`
+- **Auth:** OAuth 2.0 access token from agency-level `apiCredentials` table
 - **Fetches:** Dimensions `[date, query]`, last 90 days, row limit 1000
 - **Stores:** Inserts into `gsc_metrics` (non-unique index, uses `onConflictDoNothing`)
-- **POC note:** Same OAuth limitation as GA4 — manual token required for testing
 - **siteUrl format:** Must match exactly what's registered in GSC (e.g. `https://www.example.com/` with trailing slash or `sc-domain:example.com`)
 
-### Ahrefs (`src/lib/integrations/ahrefs.ts`)
+### Moz (`src/lib/integrations/moz.ts`)
 
-- **Auth:** API key stored in `dataSources.credentialsEnc` as `{ "apiKey": "..." }`
-- **Fetches:** Domain rating, URL rating, backlinks, referring domains, organic keywords, organic traffic
-- **Stores:** Upserts into `ahrefs_metrics` (unique per `clientId + date`)
+- **Auth:** API key from agency-level `apiCredentials` table (encrypted)
+- **Fetches:** Domain Authority, Page Authority, Spam Score, Brand Authority, backlinks, referring domains, organic keywords, organic traffic
+- **Stores:** Upserts into `moz_metrics` (unique per `clientId + date`)
+
+### DataForSEO (`src/lib/integrations/dataforseo.ts`)
+
+- **Auth:** API credentials from agency-level `apiCredentials` table (encrypted)
+- **Fetches:** Keyword volume, difficulty, SERP positions
+- **Stores:** Enriches `keyword_research` table with volume/difficulty data, updates `lastEnrichedAt` timestamp
 
 ### Rankscale (`src/lib/integrations/rankscale.ts`)
 
-- **Auth:** API key stored in `dataSources.credentialsEnc` as `{ "apiKey": "..." }`
+- **Auth:** API key from agency-level `apiCredentials` table (encrypted)
 - **Fetches:** AI visibility per prompt across platforms (ChatGPT, Perplexity, Gemini)
-- **Stores:** Inserts into `rankscaleMetrics`, then calls `updateAiVisibilityAggregate()` to update `aiVisibility` table
+- **Stores:** Inserts into `rankscale_metrics`, then calls `updateAiVisibilityAggregate()` to update `ai_visibility` table
 - **⚠ PLACEHOLDER ENDPOINT:** `https://api.rankscale.io/v1/visibility?apiKey=...&domain=...` is a best-guess based on the product. Confirm the actual endpoint with Rankscale documentation before deploying
-- **Aggregate helper:** `updateAiVisibilityAggregate(clientId, date)` in this file is also called by the SEMrush sync to keep the combined AI visibility score current
-
-### SEMrush (`src/lib/integrations/semrush.ts`)
-
-- **Auth:** API key + project ID stored in `dataSources.credentialsEnc` as `{ "apiKey": "...", "projectId": "..." }`
-- **Fetches:** AI visibility score, brand mentions, competitor comparison per platform
-- **Stores:** Inserts into `semrushMetrics`, then calls `updateAiVisibilityAggregate()`
-- **⚠ PLACEHOLDER ENDPOINT:** `https://api.semrush.com/reports/v1/projects/{projectId}/ai-overview?key=...` is a placeholder. SEMrush AI visibility may require the "AI Overview Tracking" paid add-on. Verify the endpoint with SEMrush API documentation
-- **Fallback:** If the API returns zero items, inserts a single "overall" row with null scores rather than failing
+- **Aggregate helper:** `updateAiVisibilityAggregate(clientId, date)` in this file updates the combined AI visibility score
 
 ### Triggering a Sync
 
@@ -707,9 +705,9 @@ curl -X POST /api/sync/{clientId}
 # Sync a single source
 curl -X POST /api/sync/{clientId}/GA4
 curl -X POST /api/sync/{clientId}/GSC
-curl -X POST /api/sync/{clientId}/AHREFS
+curl -X POST /api/sync/{clientId}/MOZ
+curl -X POST /api/sync/{clientId}/DATAFORSEO
 curl -X POST /api/sync/{clientId}/RANKSCALE
-curl -X POST /api/sync/{clientId}/SEMRUSH
 ```
 
 The sync API routes call the appropriate integration function and return the `SyncResult` as JSON.
@@ -836,7 +834,7 @@ Tailwind v4 uses CSS custom properties. The theme colors from `themeConfig` shou
 ### Environment Variables for Email
 
 ```bash
-RESEND_API_KEY=re_xxxxx         # Required for sending; if blank, console.log mode
+RESEND_API_KEY=re_xxxxx         # Required for sending; if blank, console output mode
 RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>  # Optional override
 ```
 
@@ -844,7 +842,7 @@ RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>  # Optional override
 
 1. Add a new `interface *EmailParams` to `src/lib/email/index.ts`
 2. Export a new `send*Email()` function following the existing pattern
-3. Add the POC console.log fallback (check `!process.env.RESEND_API_KEY`)
+3. Add the POC console output fallback (check `!process.env.RESEND_API_KEY`)
 4. Call the function from the appropriate API route or server action
 
 ---
@@ -853,34 +851,59 @@ RESEND_FROM=BIT Brand Anarchy <noreply@bitbrandanarchy.com>  # Optional override
 
 File: `.env.local` (at project root — never commit this file)
 
-| Variable | Required Now | What it does |
+Copy from `.env.example` and fill in required values.
+
+| Variable | Required | What it does |
 |---|---|---|
 | `AUTH_SECRET` | **Yes** | NextAuth JWT signing secret. Generate with `openssl rand -base64 32` |
+| `ENCRYPTION_KEY` | **Yes** | 32-byte encryption key for API credentials. Generate with `openssl rand -hex 32` (must be 64 hex chars) |
+| `CRON_SECRET` | Production | Secret for authenticating scheduled sync jobs. Generate with `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | **Yes** | Base URL for NextAuth callbacks. `http://localhost:3000` for dev |
 | `DATABASE_URL` | **Yes** | Path to SQLite file. `./data/portal.db` |
-| `RESEND_API_KEY` | Optional (POC) | Resend API key for sending real emails. Blank = console.log mode |
+| `RESEND_API_KEY` | Optional | Resend API key for sending real emails. Blank = console output mode |
 | `RESEND_FROM` | Optional | From address for emails. Defaults to `BIT Brand Anarchy <noreply@bitbrandanarchy.com>` |
-| `GOOGLE_CLIENT_ID` | Optional (POC) | Google OAuth client ID for GA4/GSC OAuth flow |
-| `GOOGLE_CLIENT_SECRET` | Optional (POC) | Google OAuth client secret |
+| `GOOGLE_CLIENT_ID` | Optional | Google OAuth client ID for GA4/GSC OAuth flow |
+| `GOOGLE_CLIENT_SECRET` | Optional | Google OAuth client secret |
 
-**API keys for integrations (Ahrefs, Rankscale, SEMrush, GA4 tokens, GSC tokens) are stored per-client in the `dataSources` table — not in environment variables.**
+**⚠️ CRITICAL:** The `ENCRYPTION_KEY` is required to encrypt/decrypt API credentials stored in the `apiCredentials` table. Without it, the application will throw an error on startup. If lost, all stored credentials become unrecoverable.
+
+**API keys for integrations (GA4, GSC, Moz, DataForSEO, Rankscale) are stored agency-wide in the `apiCredentials` table (encrypted) — not in environment variables.**
 
 ### Current `.env.local`
 
 ```bash
-# Auth
+# Auth (REQUIRED)
 AUTH_SECRET=<generated secret>
 NEXTAUTH_URL=http://localhost:3000
 
-# Database
+# Database (REQUIRED)
 DATABASE_URL=./data/portal.db
 
-# Email (Resend — add when ready)
+# Credential Encryption (REQUIRED)
+ENCRYPTION_KEY=<64-character-hex-string>
+
+# Scheduled Jobs (REQUIRED for production)
+CRON_SECRET=<generated secret>
+
+# Email (Optional — blank = console output mode)
 RESEND_API_KEY=
 
-# Google OAuth (for GA4/GSC — add when ready)
+# Google OAuth (Optional — not yet implemented)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+```
+
+### Generating Required Secrets
+
+```bash
+# Generate AUTH_SECRET
+openssl rand -base64 32
+
+# Generate ENCRYPTION_KEY (must be exactly 64 hex characters)
+openssl rand -hex 32
+
+# Generate CRON_SECRET
+openssl rand -base64 32
 ```
 
 ---
@@ -907,28 +930,27 @@ Navigate to `/admin/clients/[id]` → Data Sources section.
 
 For each source you want to connect:
 
+**Note:** Agency-level API credentials are stored in the `apiCredentials` table (encrypted). Per-client configuration (property IDs, site URLs) is stored in `dataSources`.
+
 **GA4:**
-- Property ID: find in GA4 admin → Property Settings (format: `properties/123456789`)
-- Access Token: for POC, get from [OAuth Playground](https://developers.google.com/oauthplayground) with scope `https://www.googleapis.com/auth/analytics.readonly`
+- Property Identifier: find in GA4 admin → Property Settings (format: `properties/123456789`)
 - Toggle "Connected" → Save
 
 **GSC:**
-- Site URL: exact URL as registered in Search Console (e.g. `https://acmecorp.com/`)
-- Access Token: OAuth Playground with scope `https://www.googleapis.com/auth/webmasters.readonly`
+- Property Identifier: exact URL as registered in Search Console (e.g. `https://acmecorp.com/`)
 - Toggle "Connected" → Save
 
-**Ahrefs:**
-- API Key: from Ahrefs account → API section
-- Credentials are stored as JSON `{ "apiKey": "..." }` in `credentialsEnc`
+**Moz:**
+- Property Identifier: domain to track (e.g. `acmecorp.com`)
+- Toggle "Connected" → Save
+
+**DataForSEO:**
+- Property Identifier: domain to track (e.g. `acmecorp.com`)
+- Toggle "Connected" → Save
 
 **Rankscale:**
-- API Key: from Rankscale account
-- Credentials stored as JSON `{ "apiKey": "..." }` in `credentialsEnc`
-
-**SEMrush:**
-- API Key: from SEMrush account → API section
-- Project ID: from SEMrush project settings
-- Credentials stored as JSON `{ "apiKey": "...", "projectId": "..." }` in `credentialsEnc`
+- Property Identifier: domain to track (e.g. `acmecorp.com`)
+- Toggle "Connected" → Save
 
 ### Step 3: Trigger Initial Sync
 
@@ -1115,8 +1137,8 @@ const { generateReportPDF } = await import("@/lib/export/pdf");
 | **Email (Resend)** | POC mode | Set `RESEND_API_KEY` in `.env.local` to send real emails. POC mode logs to console. Also need to verify the sender domain in Resend. |
 | **Google Sheets OAuth** | Manual token | `SheetsExportDialog` prompts users to paste an OAuth token manually (obtained from OAuth Playground). Needs the full Google OAuth flow for production. |
 | **Sync scheduler** | Not implemented | All syncs are manually triggered via the admin UI or API. No cron job or webhook-based scheduler exists. For production, add a scheduled job (Vercel Cron, external cron, etc.) to call `/api/sync/[clientId]`. |
-| **Credential encryption** | Not implemented | `dataSources.credentialsEnc`, `accessToken`, and `refreshToken` fields are stored as plain text in the DB. Before production deployment, encrypt these fields using a server-side encryption key (e.g. AES-256-GCM with a key stored in env vars). The field is named `credentialsEnc` in anticipation of this. |
-| **OAuth token refresh** | Not implemented | `dataSources.refreshToken` and `tokenExpiresAt` columns exist but token refresh logic is not implemented. GA4/GSC tokens expire in 1 hour — for production, implement automatic token refresh using the stored `refreshToken`. |
+| **Credential encryption** | ✅ Implemented | Agency-level credentials in `apiCredentials.credentialsEnc` are encrypted using AES-256-GCM with `ENCRYPTION_KEY` environment variable. The encryption key is required on startup. |
+| **OAuth token refresh** | Not implemented | OAuth token refresh logic is not implemented. GA4/GSC tokens expire in 1 hour — for production, implement automatic token refresh using the stored refresh token in `apiCredentials`. |
 | **SQLite → PostgreSQL** | Not done | The current driver is `better-sqlite3`. To migrate to PostgreSQL for production: replace driver with `pg` or `postgres.js`, update `drizzle.config.ts` dialect to `postgresql`, update `src/lib/db/index.ts` to use the new driver, and run `db:generate` to regenerate migrations for Postgres. Schema itself (Drizzle types) requires minimal changes. |
 | **Keyword bulk import** | Stub | `POST /api/keywords/import` route exists but import logic needs implementation (CSV parsing, validation, bulk insert). |
 | **Rich-text editor** | Basic | The strategy and report editors use `contenteditable` or a basic textarea for rich text. For production, consider integrating TipTap or Quill for proper rich-text editing. |

@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { monthlyReports } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
 const MONTH_NAMES = [
   "", "January", "February", "March", "April", "May", "June",
@@ -34,13 +36,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "clientId is required" }, { status: 400 });
   }
 
+  const accessContext = await getClientAccessContext(session, clientId);
+
+  if (!can("reports", "view", { session, clientId, ...accessContext })) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const rows = await db
     .select()
     .from(monthlyReports)
     .where(eq(monthlyReports.clientId, clientId))
     .orderBy(desc(monthlyReports.year), desc(monthlyReports.month));
 
-  const filtered = session.user.role === "ADMIN"
+  const filtered = can("reports", "edit", { session, clientId, ...accessContext })
     ? rows
     : rows.filter((r) => r.status === "PUBLISHED");
 
@@ -49,13 +57,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const body = await req.json() as unknown;
     const parsed = createReportSchema.parse(body);
+
+    const accessContext = await getClientAccessContext(session, parsed.clientId);
+
+    if (!can("reports", "edit", { session, clientId: parsed.clientId, ...accessContext })) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const title = `${MONTH_NAMES[parsed.month]} ${parsed.year} — SEO Report`;
 

@@ -3,116 +3,169 @@
  * Sync all (or a specified subset of) connected data sources for a client.
  * Admin only.
  *
- * Body: { sources?: ("GA4" | "GSC" | "AHREFS" | "RANKSCALE" | "SEMRUSH")[] }
+ * Body: { sources?: ("GA4" | "GSC" | "MOZ" | "RANKSCALE" | "DATAFORSEO")[] }
  * If sources is omitted or empty, ALL connected sources are synced.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { dataSources, clients } from "@/lib/db/schema";
+import { dataSources, clients, syncJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { syncGA4Data } from "@/lib/integrations/ga4";
 import { syncGSCData } from "@/lib/integrations/gsc";
-import { syncAhrefsData } from "@/lib/integrations/ahrefs";
+import { syncMozData } from "@/lib/integrations/moz";
 import { syncRankscaleData } from "@/lib/integrations/rankscale";
-import { syncSemrushData } from "@/lib/integrations/semrush";
+import { syncDataForSeoData } from "@/lib/integrations/dataforseo";
 import type { SyncResult } from "@/lib/integrations/types";
+import { can } from "@/lib/auth/authorize";
+import { getClientAccessContext } from "@/lib/auth/client-access";
 
-type DataSourceType = "GA4" | "GSC" | "AHREFS" | "RANKSCALE" | "SEMRUSH";
+type DataSourceType = "GA4" | "GSC" | "MOZ" | "RANKSCALE" | "DATAFORSEO";
 
 const ALL_SOURCE_TYPES: DataSourceType[] = [
-  "GA4",
-  "GSC",
-  "AHREFS",
-  "RANKSCALE",
-  "SEMRUSH",
+	"GA4",
+	"GSC",
+	"MOZ",
+	"RANKSCALE",
+	"DATAFORSEO",
 ];
 
 function isValidSourceType(s: string): s is DataSourceType {
-  return ALL_SOURCE_TYPES.includes(s as DataSourceType);
+	return ALL_SOURCE_TYPES.includes(s as DataSourceType);
 }
 
 async function runSync(
-  clientId: string,
-  sourceType: DataSourceType
+	clientId: string,
+	sourceType: DataSourceType,
 ): Promise<SyncResult> {
-  switch (sourceType) {
-    case "GA4":
-      return syncGA4Data(clientId);
-    case "GSC":
-      return syncGSCData(clientId);
-    case "AHREFS":
-      return syncAhrefsData(clientId);
-    case "RANKSCALE":
-      return syncRankscaleData(clientId);
-    case "SEMRUSH":
-      return syncSemrushData(clientId);
-  }
+	switch (sourceType) {
+		case "GA4":
+			return syncGA4Data(clientId);
+		case "GSC":
+			return syncGSCData(clientId);
+		case "MOZ":
+			return syncMozData(clientId);
+		case "RANKSCALE":
+			return syncRankscaleData(clientId);
+		case "DATAFORSEO":
+			return syncDataForSeoData(clientId);
+	}
 }
 
 export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ clientId: string }> }
+	req: NextRequest,
+	{ params }: { params: Promise<{ clientId: string }> },
 ) {
-  // 1. Auth check — Admin only
-  const session = await auth();
-  if (!session || session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+	// 1. Auth check — Admin only
+	const session = await auth();
+	if (!session) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
 
-  const { clientId } = await params;
+	const { clientId } = await params;
+	const accessContext = await getClientAccessContext(session, clientId);
 
-  // 2. Verify client exists
-  const client = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(eq(clients.id, clientId))
-    .get();
+	if (!can("sync", "execute", { session, clientId, ...accessContext })) {
+		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	}
 
-  if (!client) {
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
-  }
+	// 2. Verify client exists
+	const client = await db
+		.select({ id: clients.id })
+		.from(clients)
+		.where(eq(clients.id, clientId))
+		.get();
 
-  // 3. Parse request body
-  let requestedSources: DataSourceType[] = [];
-  try {
-    const body = await req.json() as { sources?: string[] };
-    if (body.sources && Array.isArray(body.sources)) {
-      requestedSources = body.sources.filter(isValidSourceType);
-    }
-  } catch {
-    // Body is optional — proceed with all sources
-  }
+	if (!client) {
+		return NextResponse.json({ error: "Client not found" }, { status: 404 });
+	}
 
-  // 4. Determine which sources to sync
-  let sourcesToSync: DataSourceType[];
+	// 3. Parse request body
+	let requestedSources: DataSourceType[] = [];
+	try {
+		const body = (await req.json()) as { sources?: string[] };
+		if (body.sources && Array.isArray(body.sources)) {
+			requestedSources = body.sources.filter(isValidSourceType);
+		}
+	} catch {
+		// Body is optional — proceed with all sources
+	}
 
-  if (requestedSources.length > 0) {
-    sourcesToSync = requestedSources;
-  } else {
-    // Sync all connected sources
-    const connectedSources = await db
-      .select({ type: dataSources.type })
-      .from(dataSources)
-      .where(eq(dataSources.clientId, clientId));
+	// 4. Determine which sources to sync
+	let sourcesToSync: DataSourceType[];
 
-    sourcesToSync = connectedSources
-      .map((s) => s.type)
-      .filter(isValidSourceType);
+	if (requestedSources.length > 0) {
+		sourcesToSync = requestedSources;
+	} else {
+		// Sync all connected sources
+		const connectedSources = await db
+			.select({ type: dataSources.type })
+			.from(dataSources)
+			.where(eq(dataSources.clientId, clientId));
 
-    if (sourcesToSync.length === 0) {
-      return NextResponse.json({
-        results: [],
-        message: "No connected data sources found for this client",
-      });
-    }
-  }
+		sourcesToSync = connectedSources
+			.map((s) => s.type)
+			.filter(isValidSourceType);
 
-  // 5. Run syncs in parallel
-  const results = await Promise.all(
-    sourcesToSync.map((sourceType) => runSync(clientId, sourceType))
-  );
+		if (sourcesToSync.length === 0) {
+			return NextResponse.json({
+				results: [],
+				message: "No connected data sources found for this client",
+			});
+		}
+	}
 
-  return NextResponse.json({ results });
+	// 5. Run syncs in parallel with job tracking
+	const results = await Promise.all(
+		sourcesToSync.map(async (sourceType) => {
+			const jobId = crypto.randomUUID();
+			db.insert(syncJobs)
+				.values({
+					id: jobId,
+					clientId,
+					source: sourceType,
+					status: "RUNNING",
+					startedAt: new Date(),
+					triggeredBy: "MANUAL",
+				})
+				.run();
+
+			try {
+				const result = await runSync(clientId, sourceType);
+
+				db.update(syncJobs)
+					.set({
+						status: result.success ? "SUCCESS" : "FAILED",
+						completedAt: new Date(),
+						rowsInserted: result.rowsInserted,
+						error: result.error || null,
+					})
+					.where(eq(syncJobs.id, jobId))
+					.run();
+
+				return result;
+			} catch (error) {
+				const errorMessage =
+					error instanceof Error ? error.message : "Unknown error";
+				db.update(syncJobs)
+					.set({
+						status: "FAILED",
+						completedAt: new Date(),
+						error: errorMessage,
+					})
+					.where(eq(syncJobs.id, jobId))
+					.run();
+
+				return {
+					success: false,
+					rowsInserted: 0,
+					error: errorMessage,
+					source: sourceType,
+				} as SyncResult;
+			}
+		}),
+	);
+
+	return NextResponse.json({ results });
 }

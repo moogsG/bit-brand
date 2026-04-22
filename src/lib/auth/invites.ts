@@ -67,7 +67,7 @@ export async function acceptInvitation({
       email: valid.invitation.email,
       name,
       passwordHash,
-      role: "CLIENT",
+      role: "CLIENT_VIEWER",
     })
     .returning();
 
