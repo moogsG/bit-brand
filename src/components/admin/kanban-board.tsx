@@ -1,11 +1,13 @@
 "use client";
 
-import { Link2, MoreVertical, Plus } from "lucide-react";
+import { Link2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { KanbanColumn, Task } from "@/lib/db/schema";
 
 interface KanbanBoardProps {
@@ -14,13 +16,58 @@ interface KanbanBoardProps {
 	clientId: string;
 }
 
-export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
-	const [columnState, setColumns] = useState<KanbanColumn[]>(columns);
-	const [taskState, setTasks] = useState<Task[]>(tasks);
+type TaskStatus = "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
 
-	const getTasksForColumn = (columnId: string) => {
+interface BoardColumn {
+	id: TaskStatus;
+	label: string;
+}
+
+interface TaskDraft {
+	title: string;
+	dueDate: string;
+	urgency: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+	status: TaskStatus;
+}
+
+const BOARD_COLUMNS: BoardColumn[] = [
+	{ id: "TODO", label: "Not Started" },
+	{ id: "IN_PROGRESS", label: "In Progress" },
+	{ id: "REVIEW", label: "Revision" },
+	{ id: "DONE", label: "Complete" },
+];
+
+const EMPTY_DRAFT: TaskDraft = {
+	title: "",
+	dueDate: "",
+	urgency: "MEDIUM",
+	status: "TODO",
+};
+
+export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
+	const [taskState, setTasks] = useState<Task[]>(tasks);
+	const [isSaving, setIsSaving] = useState(false);
+	const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+	const [taskDraft, setTaskDraft] = useState<TaskDraft>({ ...EMPTY_DRAFT });
+
+	const statusToColumnId: Partial<Record<TaskStatus, string>> = {
+		TODO: columns.find((column) => column.name.toLowerCase().includes("not") || column.name.toLowerCase().includes("todo"))?.id,
+		IN_PROGRESS: columns.find((column) => column.name.toLowerCase().includes("progress") || column.name.toLowerCase().includes("doing"))?.id,
+		REVIEW: columns.find((column) => column.name.toLowerCase().includes("review") || column.name.toLowerCase().includes("revision"))?.id,
+		DONE: columns.find((column) => column.name.toLowerCase().includes("done") || column.name.toLowerCase().includes("complete"))?.id,
+	};
+
+	const deriveBoardStatus = (task: Task): TaskStatus => {
+		if (task.status === "DONE") return "DONE";
+		if (task.status === "REVIEW") return "REVIEW";
+		if (task.status === "IN_PROGRESS") return "IN_PROGRESS";
+		if (task.status === "BLOCKED") return "IN_PROGRESS";
+		return "TODO";
+	};
+
+	const getTasksForColumn = (columnStatus: TaskStatus) => {
 		return taskState
-			.filter((t) => t.kanbanColumnId === columnId)
+			.filter((task) => deriveBoardStatus(task) === columnStatus)
 			.sort((a, b) => a.position - b.position);
 	};
 
@@ -34,6 +81,17 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 				return "bg-yellow-500";
 			default:
 				return "bg-gray-500";
+		}
+	};
+
+	const getUrgencyLabel = (task: Task) => {
+		try {
+			const parsed = JSON.parse(task.tags ?? "[]") as string[];
+			const urgencyTag = parsed.find((tag) => tag.startsWith("urgency:"));
+			if (!urgencyTag) return task.priority;
+			return urgencyTag.replace("urgency:", "").toUpperCase();
+		} catch {
+			return task.priority;
 		}
 	};
 
@@ -73,26 +131,48 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 		return null;
 	};
 
-	async function handleAddColumn() {
-		const name = window.prompt("Column name");
-		if (!name) return;
+	async function moveTask(taskId: string, targetStatus: TaskStatus) {
+		const task = taskState.find((item) => item.id === taskId);
+		if (!task) return;
+
+		const targetTasks = getTasksForColumn(targetStatus);
+		const nextPosition = targetTasks.length;
+
+		setTasks((prev) =>
+			prev.map((item) =>
+				item.id === taskId
+					? {
+							...item,
+							status: targetStatus,
+							kanbanColumnId: statusToColumnId[targetStatus] ?? null,
+							position: nextPosition,
+						}
+					: item,
+			),
+		);
+
 		try {
-			const res = await fetch("/api/kanban-columns", {
-				method: "POST",
+			await fetch(`/api/tasks/${taskId}`, {
+				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ clientId, name, position: columnState.length }),
+				body: JSON.stringify({
+					status: targetStatus,
+					kanbanColumnId: statusToColumnId[targetStatus] ?? null,
+					position: nextPosition,
+				}),
 			});
-			if (!res.ok) throw new Error(await res.text());
-			const col = (await res.json()) as KanbanColumn;
-			setColumns((prev) => [...prev, col]);
 		} catch (err) {
-			console.error("Failed to add column", err);
+			console.error("Failed to move task", err);
+			setTasks((prev) => prev.map((item) => (item.id === task.id ? task : item)));
 		}
 	}
 
-	async function handleAddTask(columnId: string) {
-		const title = window.prompt("Task title");
+	async function handleAddTask() {
+		const columnStatus = taskDraft.status;
+		const title = taskDraft.title.trim();
 		if (!title) return;
+
+		setIsSaving(true);
 		try {
 			const res = await fetch("/api/tasks", {
 				method: "POST",
@@ -100,55 +180,157 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 				body: JSON.stringify({
 					clientId,
 					title,
-					kanbanColumnId: columnId,
-					position: getTasksForColumn(columnId).length,
+					status: columnStatus,
+					priority: taskDraft.urgency,
+					tags: [`urgency:${taskDraft.urgency.toLowerCase()}`],
+					dueDate: taskDraft.dueDate
+						? new Date(taskDraft.dueDate).toISOString()
+						: null,
+					kanbanColumnId: statusToColumnId[columnStatus] ?? null,
+					position: getTasksForColumn(columnStatus).length,
 				}),
 			});
 			if (!res.ok) throw new Error(await res.text());
 			const task = (await res.json()) as Task;
 			setTasks((prev) => [...prev, task]);
+			setTaskDraft({ ...EMPTY_DRAFT, status: columnStatus });
 		} catch (err) {
 			console.error("Failed to add task", err);
+		} finally {
+			setIsSaving(false);
 		}
 	}
 
 	return (
-		<div className="flex gap-4 overflow-x-auto pb-4">
-			{columnState.map((column) => {
+		<div className="space-y-4">
+			<Card>
+				<CardHeader className="pb-2">
+					<CardTitle className="text-sm">Add Task</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+						<div className="space-y-1">
+							<Label htmlFor="task-title-global" className="text-xs">
+								Task
+							</Label>
+							<Input
+								id="task-title-global"
+								value={taskDraft.title}
+								onChange={(event) =>
+									setTaskDraft((prev) => ({ ...prev, title: event.target.value }))
+								}
+								placeholder="Add task title"
+								className="h-9"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label htmlFor="task-status-global" className="text-xs">
+								Status
+							</Label>
+							<select
+								id="task-status-global"
+								value={taskDraft.status}
+								onChange={(event) =>
+									setTaskDraft((prev) => ({
+										...prev,
+										status: event.target.value as TaskStatus,
+									}))
+								}
+								className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+							>
+								<option value="TODO">Not Started</option>
+								<option value="IN_PROGRESS">In Progress</option>
+								<option value="REVIEW">Revision</option>
+								<option value="DONE">Complete</option>
+							</select>
+						</div>
+						<div className="space-y-1">
+							<Label htmlFor="task-due-global" className="text-xs">
+								Due
+							</Label>
+							<Input
+								id="task-due-global"
+								type="date"
+								value={taskDraft.dueDate}
+								onChange={(event) =>
+									setTaskDraft((prev) => ({ ...prev, dueDate: event.target.value }))
+								}
+								className="h-9"
+							/>
+						</div>
+						<div className="space-y-1">
+							<Label htmlFor="task-urgency-global" className="text-xs">
+								Urgency
+							</Label>
+							<select
+								id="task-urgency-global"
+								value={taskDraft.urgency}
+								onChange={(event) =>
+									setTaskDraft((prev) => ({
+										...prev,
+										urgency: event.target.value as TaskDraft["urgency"],
+									}))
+								}
+								className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+							>
+								<option value="LOW">Low</option>
+								<option value="MEDIUM">Medium</option>
+								<option value="HIGH">High</option>
+								<option value="URGENT">Urgent</option>
+							</select>
+						</div>
+						<div className="flex items-end">
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-9 w-full"
+								onClick={() => void handleAddTask()}
+								disabled={isSaving || taskDraft.title.trim().length === 0}
+							>
+								<Plus className="h-4 w-4 mr-2" />
+								Add
+							</Button>
+						</div>
+					</div>
+				</CardContent>
+			</Card>
+
+			<div className="flex gap-4 overflow-x-auto pb-4">
+			{BOARD_COLUMNS.map((column) => {
 				const columnTasks = getTasksForColumn(column.id);
 				return (
 					<div
-						key={column.id}
+						key={column.label}
 						className="flex-shrink-0 w-80"
 						style={{ minWidth: "320px" }}
+						onDragOver={(event) => event.preventDefault()}
+						onDrop={(event) => {
+							event.preventDefault();
+							if (!draggedTaskId) return;
+							void moveTask(draggedTaskId, column.id);
+							setDraggedTaskId(null);
+						}}
 					>
 						<Card>
 							<CardHeader className="pb-3">
 								<div className="flex items-center justify-between">
 									<div className="flex items-center gap-2">
-										{column.color && (
-											<div
-												className="w-3 h-3 rounded-full"
-												style={{ backgroundColor: column.color }}
-											/>
-										)}
 										<CardTitle className="text-sm font-medium">
-											{column.name}
+											{column.label}
 										</CardTitle>
 										<Badge variant="secondary" className="text-xs">
 											{columnTasks.length}
 										</Badge>
 									</div>
-									<Button size="sm" variant="ghost" className="h-6 w-6 p-0">
-										<MoreVertical className="h-4 w-4" />
-									</Button>
 								</div>
 							</CardHeader>
 							<CardContent className="space-y-2">
 								{columnTasks.map((task) => (
 									<Card
 										key={task.id}
-										className="p-3 cursor-pointer hover:shadow-md transition-shadow"
+										className="p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+										draggable
+										onDragStart={() => setDraggedTaskId(task.id)}
 									>
 										<div className="space-y-2">
 											<div className="flex items-start justify-between gap-2">
@@ -196,35 +378,17 @@ export function KanbanBoard({ columns, tasks, clientId }: KanbanBoardProps) {
 													</span>
 												)}
 												<Badge variant="outline" className="text-xs">
-													{task.status}
+													{getUrgencyLabel(task)}
 												</Badge>
 											</div>
 										</div>
 									</Card>
 								))}
-								<Button
-									variant="ghost"
-									size="sm"
-									className="w-full justify-start text-muted-foreground"
-									onClick={() => handleAddTask(column.id)}
-								>
-									<Plus className="h-4 w-4 mr-2" />
-									Add task
-								</Button>
 							</CardContent>
 						</Card>
 					</div>
 				);
 			})}
-			<div className="flex-shrink-0 w-80">
-				<Button
-					variant="outline"
-					className="w-full h-full min-h-[200px] border-dashed"
-					onClick={handleAddColumn}
-				>
-					<Plus className="h-5 w-5 mr-2" />
-					Add column
-				</Button>
 			</div>
 		</div>
 	);

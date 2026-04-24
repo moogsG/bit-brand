@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { clients, clientMessages, clientUsers } from "@/lib/db/schema";
+import { clients, clientMessages, clientUsers, users } from "@/lib/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { MessagesThread } from "@/components/portal/messages-thread";
@@ -45,6 +45,17 @@ export default async function PortalMessagesPage({
 		.limit(200)
 		.all();
 
+	const teamMembers = await db
+		.select({
+			id: users.id,
+			name: users.name,
+			email: users.email,
+		})
+		.from(clientUsers)
+		.innerJoin(users, eq(clientUsers.userId, users.id))
+		.where(eq(clientUsers.clientId, client.id))
+		.all();
+
 	return (
 		<div className="space-y-4">
 			<h1 className="text-2xl font-semibold">Messages</h1>
@@ -52,6 +63,7 @@ export default async function PortalMessagesPage({
 				messages={messages}
 				clientId={client.id}
 				currentRole={session.user.role === "ADMIN" ? "ADMIN" : "CLIENT"}
+				recipientOptions={teamMembers}
 			/>
 		</div>
 	);

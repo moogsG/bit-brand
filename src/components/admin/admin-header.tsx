@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import { LogOut, User } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ export function AdminHeader({ title }: AdminHeaderProps) {
   const { data: session } = useSession();
 
   const name = session?.user?.name ?? "Admin";
+  const image = session?.user?.image ?? undefined;
   const initials = name
     .split(" ")
     .map((n) => n[0])
@@ -34,6 +35,7 @@ export function AdminHeader({ title }: AdminHeaderProps) {
       <DropdownMenu>
         <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted transition-colors outline-none">
           <Avatar size="sm">
+            {image ? <AvatarImage src={image} alt={name} /> : null}
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
           <span className="text-sm font-medium hidden sm:block">{name}</span>

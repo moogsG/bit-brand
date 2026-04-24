@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
+import { Loader2, Plus, Save, Send, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import {
 	buildFinalPayload,
 	profileToWizardValues,
 } from "./payload";
+import { generateNorthStarSuggestion } from "@/lib/onboarding/north-star";
 import { OnboardingStepper } from "./onboarding-stepper";
 import {
 	onboardingWizardDefaultValues,
@@ -81,6 +82,7 @@ export function OnboardingWizard({
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [profileMeta, setProfileMeta] = useState<ProfileMeta | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	const [didAutoGenerateNorthStar, setDidAutoGenerateNorthStar] = useState(false);
 
 	const {
 		control,
@@ -135,6 +137,32 @@ export function OnboardingWizard({
 
 	const activeStep = steps[currentStep];
 
+	const applyGeneratedNorthStar = useCallback(() => {
+		const values = getValues();
+		const suggestion = generateNorthStarSuggestion({
+			businessName: values.businessFundamentals.businessName,
+			industry: values.businessFundamentals.industry,
+			primaryOffer: values.businessFundamentals.primaryOffer,
+			primaryConversion: values.conversionArchitecture.primaryConversion,
+			monthlyLeads: values.currentStateBaseline.monthlyLeads,
+			competitorCount: values.competitors.filter((item) => item.name.trim().length > 0).length,
+		});
+
+		setValue("northStarGoal.statement", suggestion.statement, {
+			shouldDirty: true,
+			shouldValidate: true,
+		});
+		setValue("northStarGoal.metricName", suggestion.metricName, { shouldDirty: true });
+		setValue("northStarGoal.targetValue", suggestion.targetValue, { shouldDirty: true });
+		setValue("northStarGoal.timeHorizonMonths", suggestion.timeHorizonMonths, {
+			shouldDirty: true,
+		});
+		setValue("northStarGoal.targetDate", suggestion.targetDate, { shouldDirty: true });
+		setValue("northStarGoal.confidenceNotes", suggestion.confidenceNotes, {
+			shouldDirty: true,
+		});
+	}, [getValues, setValue]);
+
 	const loadProfile = useCallback(async () => {
 		setIsLoadingProfile(true);
 		setLoadError(null);
@@ -178,6 +206,27 @@ export function OnboardingWizard({
 	useEffect(() => {
 		void loadProfile();
 	}, [loadProfile]);
+
+	useEffect(() => {
+		if (!canEdit) return;
+		if (activeStep.key !== "northStarGoal") return;
+		if (didAutoGenerateNorthStar) return;
+
+		const statement = getValues("northStarGoal.statement");
+		if (typeof statement === "string" && statement.trim().length > 0) {
+			setDidAutoGenerateNorthStar(true);
+			return;
+		}
+
+		applyGeneratedNorthStar();
+		setDidAutoGenerateNorthStar(true);
+	}, [
+		activeStep.key,
+		applyGeneratedNorthStar,
+		canEdit,
+		didAutoGenerateNorthStar,
+		getValues,
+	]);
 
 	const stepErrorCount = useMemo(
 		() =>
@@ -452,6 +501,28 @@ export function OnboardingWizard({
 
 					{activeStep.key === "northStarGoal" && (
 						<div className="grid gap-4 md:grid-cols-2">
+							<div className="space-y-2 md:col-span-2 rounded-md border border-border bg-muted/40 p-3">
+								<div className="flex items-center justify-between gap-2">
+									<p className="text-xs text-muted-foreground">
+										This goal is tool-assisted. Generate a draft from business, competitor, conversion, and baseline inputs.
+									</p>
+									{canEdit && (
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onClick={() => {
+												applyGeneratedNorthStar();
+												toast.success("North Star draft refreshed");
+											}}
+										>
+											<Sparkles className="mr-1 h-3.5 w-3.5" />
+											Generate draft
+										</Button>
+									)}
+								</div>
+							</div>
+
 							<div className="space-y-1.5 md:col-span-2">
 								<Label htmlFor="statement">North Star statement</Label>
 								<Input id="statement" disabled={!canEdit} {...register("northStarGoal.statement")} />

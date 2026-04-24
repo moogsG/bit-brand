@@ -497,14 +497,14 @@ All routes are dynamic (Server-side rendered). `○` = static, `ƒ` = dynamic.
 | Route | Description |
 |---|---|
 | `GET /admin/dashboard` | Admin overview: all clients, recent activity |
-| `GET /admin/clients` | All clients list with status badges |
-| `GET /admin/clients/[id]` | Client detail: info, data sources, sync status, invite user |
+| `GET /admin/clients` | Redirects to `/admin/dashboard` (single entry point) |
+| `GET /admin/clients/[id]` | Client workspace: defaults to dashboard tab with operational cards |
 | `GET /admin/clients/[id]/keywords` | Keyword management for client |
 | `GET /admin/clients/[id]/reports` | Reports list for client |
 | `GET /admin/clients/[id]/reports/[reportId]` | Report editor: sections, publish/archive |
 | `GET /admin/clients/[id]/strategy` | Strategy list for client |
 | `GET /admin/clients/[id]/strategy/[strategyId]` | Strategy editor: sections, publish/archive |
-| `GET /admin/settings` | Admin settings: change password, data export |
+| `GET /admin/settings` | Admin settings: Profile and Admin tabs |
 
 ### Portal Routes (Client-facing)
 
@@ -539,7 +539,8 @@ All routes are dynamic (Server-side rendered). `○` = static, `ƒ` = dynamic.
 | `/api/sync/[clientId]/[source]` | POST | Trigger sync for one source (GA4\|GSC\|AHREFS\|RANKSCALE\|SEMRUSH) |
 | `/api/export/csv` | GET | CSV export — query params: `type` (keywords\|ga4\|gsc), `clientId` |
 | `/api/export/sheets` | POST | Google Sheets export — body: `{ accessToken, data, sheetTitle }` |
-| `/api/settings/password` | POST | Change admin password |
+| `/api/settings/profile` | GET, PATCH | Get/update authenticated user's profile (name, avatarUrl) |
+| `/api/settings/password` | PATCH | Change authenticated user's password (self-service) |
 | `/api/settings/export` | GET | Full data export (JSON) |
 
 ---
@@ -553,11 +554,19 @@ Overview of all clients with:
 - Last sync timestamps
 - Quick links to each client portal
 
-### Client Management (`/admin/clients`)
+### Client Management
 
+- **`/admin/clients` redirects to `/admin/dashboard`** — single entry point for client list
 - **Create client:** `CreateClientDialog` — name, domain, slug, industry, notes. Slug must be URL-safe (used in `/portal/[clientSlug]`).
 - **Edit client:** `ClientEditForm` — all fields including `isActive` toggle
-- **Client detail (`/admin/clients/[id]`):** Shows data source connection status, sync controls, keyword count, report count
+- **Client workspace (`/admin/clients/[id]`):** Defaults to dashboard tab showing six operational cards:
+  - Approvals (pending count)
+  - Communications (recent activity)
+  - Critical Issues (flagged items)
+  - Tasks (active/overdue)
+  - Traffic Data (recent metrics)
+  - North Star (goal tracking)
+- **Persistent section navigation:** Client workspace has a persistent nav bar across all client subpages (dashboard, keywords, reports, strategy, etc.)
 
 ### Data Source Connections
 
@@ -597,8 +606,17 @@ From the admin client detail page, click "View as Client" to navigate to `/porta
 
 ### Settings (`/admin/settings`)
 
-- Change admin password (`ChangePasswordForm` → `POST /api/settings/password`)
-- Full data export: download all client data as JSON (`GET /api/settings/export`)
+Two-tab interface:
+
+**Profile tab:**
+- Edit display name and profile photo URL (`GET/PATCH /api/settings/profile`)
+- Change password (self-service via `POST /api/settings/password`)
+- Profile photo propagates to admin header avatar when present
+
+**Admin tab:**
+- Portal settings configuration
+- API credentials management (link to credentials interface)
+- Danger zone: full data export as JSON (`GET /api/settings/export`)
 
 ---
 

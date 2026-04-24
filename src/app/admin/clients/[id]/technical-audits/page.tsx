@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { ClientSectionsNav } from "@/components/admin/client-sections-nav";
 import { TechnicalAuditsPanel } from "@/components/admin/technical-audits-panel";
 import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import { auth } from "@/lib/auth";
@@ -43,7 +44,7 @@ export default async function AdminTechnicalAuditsPage({
 			<main className="flex-1 space-y-6 overflow-y-auto p-6">
 				<div className="space-y-3">
 					<Link
-						href={`/admin/clients/${id}?tab=overview`}
+						href={`/admin/clients/${id}?tab=dashboard`}
 						className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
 					>
 						<ArrowLeft className="h-3.5 w-3.5" />
@@ -61,6 +62,8 @@ export default async function AdminTechnicalAuditsPage({
 					clientId={id}
 					onboardingHref={`/admin/clients/${id}/onboarding`}
 				/>
+
+				<ClientSectionsNav clientId={id} active="technical" />
 
 				<TechnicalAuditsPanel
 					clientId={id}

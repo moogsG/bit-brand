@@ -13,14 +13,37 @@ export const authConfig: NextAuthConfig = {
     error: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         const rawRole = (user as { role?: string }).role;
         token.id = user.id;
         token.rawRole = rawRole;
         token.role = toLegacyRole(rawRole);
         token.clientId = (user as { clientId?: string }).clientId;
+        token.name = user.name;
+        token.email = user.email;
+        token.picture = (user as { image?: string }).image;
       }
+
+      if (trigger === "update" && session) {
+        const sessionUser = (session as { user?: { name?: string; image?: string } }).user;
+        const updatedName =
+          typeof sessionUser?.name === "string"
+            ? sessionUser.name
+            : typeof (session as { name?: string }).name === "string"
+              ? (session as { name?: string }).name
+              : undefined;
+        const updatedImage =
+          typeof sessionUser?.image === "string"
+            ? sessionUser.image
+            : typeof (session as { image?: string }).image === "string"
+              ? (session as { image?: string }).image
+              : undefined;
+
+        if (updatedName !== undefined) token.name = updatedName;
+        if (updatedImage !== undefined) token.picture = updatedImage;
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -33,6 +56,9 @@ export const authConfig: NextAuthConfig = {
           (token.rawRole as AppUserRole | undefined) ??
           (token.role as AppUserRole | undefined);
         session.user.clientId = token.clientId as string | undefined;
+        if (typeof token.name === "string") session.user.name = token.name;
+        if (typeof token.email === "string") session.user.email = token.email;
+        if (typeof token.picture === "string") session.user.image = token.picture;
       }
       return session;
     },

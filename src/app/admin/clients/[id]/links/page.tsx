@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { ClientSectionsNav } from "@/components/admin/client-sections-nav";
 import { LinkProspectingPanel } from "@/components/admin/link-prospecting-panel";
 import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import { auth } from "@/lib/auth";
@@ -24,7 +25,7 @@ export default async function AdminClientLinksPage({
 
 	const { id } = await params;
 	if (!phase3Flags.linksV1()) {
-		redirect(`/admin/clients/${id}?tab=overview`);
+		redirect(`/admin/clients/${id}?tab=dashboard`);
 	}
 
 	const accessContext = await getClientAccessContext(session, id);
@@ -47,7 +48,7 @@ export default async function AdminClientLinksPage({
 			<main className="flex-1 space-y-6 overflow-y-auto p-6">
 				<div className="space-y-3">
 					<Link
-						href={`/admin/clients/${id}?tab=overview`}
+						href={`/admin/clients/${id}?tab=dashboard`}
 						className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
 					>
 						<ArrowLeft className="h-3.5 w-3.5" />
@@ -65,6 +66,8 @@ export default async function AdminClientLinksPage({
 					clientId={id}
 					onboardingHref={`/admin/clients/${id}/onboarding`}
 				/>
+
+				<ClientSectionsNav clientId={id} active="links" />
 
 				<LinkProspectingPanel clientId={id} />
 			</main>

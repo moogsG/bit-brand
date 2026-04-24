@@ -1867,6 +1867,12 @@ export const clientMessages = sqliteTable(
 		senderRole: text("sender_role", { enum: ["ADMIN", "CLIENT"] })
 			.notNull()
 			.default("CLIENT"),
+		recipientScope: text("recipient_scope", {
+			enum: ["TEAM", "MEMBERS"],
+		})
+			.notNull()
+			.default("TEAM"),
+		recipientUserIds: text("recipient_user_ids").notNull().default("[]"),
 		body: text("body").notNull(),
 		readAt: integer("read_at", { mode: "timestamp" }),
 		createdAt: integer("created_at", { mode: "timestamp" })
@@ -1876,6 +1882,7 @@ export const clientMessages = sqliteTable(
 	(t) => [
 		index("client_messages_client_idx").on(t.clientId, t.createdAt),
 		index("client_messages_sender_idx").on(t.senderId),
+		index("client_messages_recipient_scope_idx").on(t.clientId, t.recipientScope),
 	],
 );
 

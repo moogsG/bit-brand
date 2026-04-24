@@ -1,6 +1,6 @@
 # Alchem Implementation Progress Checklist
 
-**Last updated:** 2026-04-22  
+**Last updated:** 2026-04-23  
 **Tracking scope:** `docs/alchem-full-implementation-plan.md` + `docs/alchem-phase-1-backlog.md`
 
 Use this as the single status tracker for phase completion.
@@ -19,7 +19,7 @@ Use this as the single status tracker for phase completion.
 
 - [x] **Phase 1 — Foundation**
 - [~] **Phase 2 — Differentiation**
-- [~] **Phase 3 — Content, Links, Collaboration**
+- [x] **Phase 3 — Content, Links, Collaboration**
 - [ ] **Phase 4 — Scale & Polish**
 
 ---
@@ -111,12 +111,12 @@ Use this as the single status tracker for phase completion.
 ## Phase 3 — Content, Links, Collaboration Checklist
 
 - [x] EPIC-12 Content Audit v1
-- [~] EPIC-13 Content Calendar + Brief Workflow
+- [x] EPIC-13 Content Calendar + Brief Workflow
 - [x] EPIC-14 EEAT Questionnaires (Portal)
 - [x] EPIC-15 Links Intelligence
 - [x] EPIC-16 Technical Implementation Agent v1 (approval-gated)
 - [x] EPIC-17 Client Portal v2 Collaboration
-- [~] EPIC-18 Phase 3 Quality, Rollout, and Safeguards
+- [x] EPIC-18 Phase 3 Quality, Rollout, and Safeguards
 
 ### Phase 3 Execution Notes
 - **Story 12.1 (complete):** content assets inventory model + scoped read API shipped.
@@ -149,8 +149,8 @@ Use this as the single status tracker for phase completion.
   - Evidence: `src/app/portal/[clientSlug]/notifications/page.tsx`, `src/components/portal/notifications-list.tsx`, `src/app/api/notifications/route.ts`, `tests/notifications-api.test.ts`.
 - **Story 18.1 (complete):** Phase 3 portal collaboration surfaces are now consistently gated by `FF_PORTAL_V2`.
   - Evidence: `src/lib/flags/phase-3.ts`, `src/app/portal/[clientSlug]/approvals/page.tsx`, `src/app/portal/[clientSlug]/notifications/page.tsx`, `src/app/portal/[clientSlug]/eeat-questionnaire/page.tsx`, `tests/portal-v2-pages-gating.test.ts`.
-- **Story 18.2 (partial):** broad Phase 3 regression coverage exists for APIs and deterministic engines; CI/coverage sign-off evidence is not captured here.
-  - Evidence: `tests/content-*.test.ts`, `tests/eeat-*.test.ts`, `tests/links-*.test.ts`, `tests/implementation-*.test.ts`, `tests/feature-flags.test.ts`.
+- **Story 18.2 (complete):** broad Phase 3 regression coverage exists for APIs and deterministic engines, with current local quality gates passing.
+  - Evidence: `tests/content-*.test.ts`, `tests/eeat-*.test.ts`, `tests/links-*.test.ts`, `tests/implementation-*.test.ts`, `tests/feature-flags.test.ts`; plus `bun run test`, `bun run lint`, and `bun run build` passing locally (lint warnings only, no errors).
 
 ### Phase 3 Exit Criteria
 - [x] Full content lifecycle operational
@@ -186,3 +186,12 @@ Use this as the single status tracker for phase completion.
 - **North Star now appears in client workspace:** `NorthStarRibbon` is mounted in portal layout (`src/app/portal/[clientSlug]/layout.tsx`) and remains available across admin client pages.
 - **Keyword opportunities + technical baseline are operational (API + UI):** keyword scoring endpoint at `GET /api/keywords/opportunities` (`src/app/api/keywords/opportunities/route.ts`) with admin UI at `/admin/clients/[id]/opportunities` (`src/app/admin/clients/[id]/opportunities/page.tsx`, `src/components/admin/keyword-opportunities-panel.tsx`); technical baseline API at `GET/POST /api/technical/audits` (`src/app/api/technical/audits/route.ts`) with UI at `/admin/clients/[id]/technical-audits` (`src/app/admin/clients/[id]/technical-audits/page.tsx`, `src/components/admin/technical-audits-panel.tsx`) backed by `technical_audit_runs` and `technical_issues` (`src/lib/db/schema.ts`).
 - **Client-safe AI context default is enforced by role:** `GET /api/ai/context/[clientId]` resolves scope (`agency-full` vs `client-safe`) and strips opportunity/risk item arrays for client-equivalent roles (`src/app/api/ai/context/[clientId]/route.ts`).
+
+### Execution Notes (recent UX/navigation slices)
+
+- **Consolidated client navigation with persistent section nav:** `/admin/clients` now redirects to `/admin/dashboard` (single entry point). Client workspace (`/admin/clients/[id]`) has a persistent section navigation bar across all client subpages (dashboard, keywords, reports, strategy, etc.).
+  - Evidence: `src/app/admin/clients/page.tsx` (redirect), `src/app/admin/clients/[id]/page.tsx` (section nav integration), `src/components/admin/client-sections-nav.tsx`, and client subpages under `src/app/admin/clients/[id]/**/page.tsx`.
+- **Client workspace default dashboard with six operational cards:** Client detail page (`/admin/clients/[id]`) now defaults to a dashboard tab showing six operational cards: Approvals, Communications, Critical Issues, Tasks, Traffic Data, and North Star.
+  - Evidence: `src/app/admin/clients/[id]/page.tsx`.
+- **Settings split (Profile/Admin) with profile self-service API and avatar propagation:** Settings page (`/admin/settings`) now has two tabs: Profile (display name, profile photo URL, password change) and Admin (portal settings, API credentials link, danger zone export). New API route `GET/PATCH /api/settings/profile` supports self-service profile updates. Admin header avatar now uses profile image when present.
+  - Evidence: `src/app/admin/settings/page.tsx`, `src/app/api/settings/profile/route.ts`, `src/app/api/settings/password/route.ts`, `src/components/admin/admin-header.tsx`, `src/components/admin/profile-settings-form.tsx`, `src/lib/auth/config.ts`, `src/lib/auth/index.ts`.

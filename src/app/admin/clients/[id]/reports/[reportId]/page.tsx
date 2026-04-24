@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { clients, monthlyReports } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { ClientSectionsNav } from "@/components/admin/client-sections-nav";
 import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -76,6 +77,8 @@ export default async function AdminReportEditorPage({
         </Link>
 
         <NorthStarRibbon clientId={id} onboardingHref={`/admin/clients/${id}/onboarding`} />
+
+        <ClientSectionsNav clientId={id} active="reports" />
 
         <ReportEditor
           reportId={reportId}

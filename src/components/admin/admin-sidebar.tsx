@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { LayoutDashboard, Users, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Settings, LogOut, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { themeConfig } from "@/lib/theme.config";
 import { Button } from "@/components/ui/button";
@@ -22,12 +22,17 @@ const navItems: {
     icon: LayoutDashboard,
     module: "admin",
   },
-  { href: "/admin/clients", label: "Clients", icon: Users, module: "clients" },
   {
     href: "/admin/settings",
     label: "Settings",
     icon: Settings,
     module: "settings",
+  },
+  {
+    href: "/admin/ai-visibility",
+    label: "AI Visibility",
+    icon: Sparkles,
+    module: "aiVisibility",
   },
 ];
 

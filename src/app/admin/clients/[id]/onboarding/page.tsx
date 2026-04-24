@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { ClientSectionsNav } from "@/components/admin/client-sections-nav";
 import { OnboardingWizard } from "@/components/admin/onboarding/onboarding-wizard";
 import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import { auth } from "@/lib/auth";
@@ -70,6 +71,8 @@ export default async function AdminClientOnboardingPage({
 				</div>
 
 				<NorthStarRibbon clientId={id} onboardingHref={`/admin/clients/${id}/onboarding`} />
+
+				<ClientSectionsNav clientId={id} active="onboarding" />
 
 				<OnboardingWizard clientId={id} clientName={client.name} canEdit={canEdit} />
 			</main>

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { clients, monthlyReports } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { ClientSectionsNav } from "@/components/admin/client-sections-nav";
 import { NorthStarRibbon } from "@/components/shared/north-star-ribbon";
 import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
@@ -54,7 +55,7 @@ export default async function AdminReportsPage({
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
         <div className="space-y-3">
           <Link
-            href={`/admin/clients/${id}?tab=overview`}
+            href={`/admin/clients/${id}?tab=dashboard`}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -72,6 +73,8 @@ export default async function AdminReportsPage({
         </div>
 
         <NorthStarRibbon clientId={id} onboardingHref={`/admin/clients/${id}/onboarding`} />
+
+        <ClientSectionsNav clientId={id} active="reports" />
 
         {reports.length === 0 ? (
           <Card>

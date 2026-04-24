@@ -7,20 +7,61 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ClientMessage } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
+interface MessageRecipientOption {
+	id: string;
+	name: string;
+	email: string;
+}
+
 interface MessagesThreadProps {
 	messages: ClientMessage[];
 	clientId: string;
 	currentRole?: "ADMIN" | "CLIENT";
+	recipientOptions?: MessageRecipientOption[];
 }
 
 export function MessagesThread({
 	messages,
 	clientId,
 	currentRole = "CLIENT",
+	recipientOptions = [],
 }: MessagesThreadProps) {
 	const [items, setItems] = useState<ClientMessage[]>(messages);
 	const [input, setInput] = useState("");
 	const [sending, setSending] = useState(false);
+	const [recipientScope, setRecipientScope] = useState<"TEAM" | "MEMBERS">("TEAM");
+	const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
+
+	const recipientNameMap = useMemo(
+		() => new Map(recipientOptions.map((option) => [option.id, option.name])),
+		[recipientOptions],
+	);
+
+	function parseRecipientIds(value: string | null | undefined): string[] {
+		if (!value) return [];
+		try {
+			const parsed = JSON.parse(value);
+			if (!Array.isArray(parsed)) return [];
+			return parsed.filter(
+				(id): id is string => typeof id === "string" && id.trim().length > 0,
+			);
+		} catch {
+			return [];
+		}
+	}
+
+	function getRecipientDisplay(message: ClientMessage): string {
+		if (message.recipientScope === "TEAM") {
+			return "Whole team";
+		}
+
+		const recipientIds = parseRecipientIds(message.recipientUserIds);
+		if (recipientIds.length === 0) return "Selected team members";
+
+		return recipientIds
+			.map((id) => recipientNameMap.get(id) ?? "Unknown member")
+			.join(", ");
+	}
 
 	// Sort ascending for display
 	const sorted = useMemo(
@@ -39,6 +80,7 @@ export function MessagesThread({
 
 	async function handleSend() {
 		if (!input.trim()) return;
+		if (recipientScope === "MEMBERS" && selectedRecipientIds.length === 0) return;
 		setSending(true);
 		const optimistic: ClientMessage = {
 			id: `temp-${Date.now()}`,
@@ -47,6 +89,10 @@ export function MessagesThread({
 			createdAt: new Date(),
 			senderId: "me",
 			senderRole: currentRole,
+			recipientScope,
+			recipientUserIds: JSON.stringify(
+				recipientScope === "TEAM" ? [] : selectedRecipientIds,
+			),
 			readAt: null,
 		};
 		setItems((prev) => [...prev, optimistic]);
@@ -56,7 +102,13 @@ export function MessagesThread({
 			const res = await fetch("/api/messages", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ clientId, message: optimistic.body }),
+				body: JSON.stringify({
+					clientId,
+					message: optimistic.body,
+					recipientScope,
+					recipientUserIds:
+						recipientScope === "TEAM" ? [] : selectedRecipientIds,
+				}),
 			});
 			if (!res.ok) {
 				throw new Error(await res.text());
@@ -87,11 +139,13 @@ export function MessagesThread({
 							const roleLabel = msg.senderRole === "ADMIN" ? "Team" : "Client";
 							return (
 								<div key={msg.id} className={cn("flex flex-col gap-1") }>
-									<div className={cn("text-xs text-muted-foreground", "flex gap-2 items-center") }>
-										<span>{isMine ? "You" : roleLabel}</span>
-										{msg.createdAt && (
-											<span>
-												{new Date(msg.createdAt).toLocaleString()}
+							<div className={cn("text-xs text-muted-foreground", "flex gap-2 items-center") }>
+								<span>{isMine ? "You" : roleLabel}</span>
+								<span>•</span>
+								<span>To: {getRecipientDisplay(msg)}</span>
+								{msg.createdAt && (
+									<span>
+										{new Date(msg.createdAt).toLocaleString()}
 											</span>
 										)}
 									</div>
@@ -114,6 +168,61 @@ export function MessagesThread({
 					<label className="text-sm font-medium" htmlFor="message-input">
 						Send a message
 					</label>
+					{recipientOptions.length > 0 && (
+						<div className="space-y-2 rounded-md border border-border p-3">
+							<p className="text-xs font-medium text-muted-foreground">Recipients</p>
+							<div className="flex gap-2">
+								<Button
+									type="button"
+									variant={recipientScope === "TEAM" ? "default" : "outline"}
+									size="sm"
+									onClick={() => {
+										setRecipientScope("TEAM");
+										setSelectedRecipientIds([]);
+									}}
+								>
+									Whole team
+								</Button>
+								<Button
+									type="button"
+									variant={recipientScope === "MEMBERS" ? "default" : "outline"}
+									size="sm"
+									onClick={() => setRecipientScope("MEMBERS")}
+								>
+									Team members
+								</Button>
+							</div>
+							{recipientScope === "MEMBERS" && (
+								<div className="space-y-1">
+									{recipientOptions.map((option) => {
+										const checked = selectedRecipientIds.includes(option.id);
+										return (
+											<label
+												key={option.id}
+												className="flex items-center gap-2 text-xs"
+											>
+												<input
+													type="checkbox"
+													checked={checked}
+													onChange={(event) => {
+														setSelectedRecipientIds((prev) => {
+															if (event.target.checked) {
+																return [...prev, option.id];
+															}
+															return prev.filter((id) => id !== option.id);
+														});
+													}}
+												/>
+												<span>
+													{option.name} ({option.email})
+												</span>
+											</label>
+										);
+									})}
+								</div>
+							)}
+						</div>
+					)}
 					<Textarea
 						id="message-input"
 						value={input}
@@ -121,7 +230,14 @@ export function MessagesThread({
 						placeholder="Write your update or question..."
 						rows={3}
 					/>
-					<Button onClick={handleSend} disabled={sending || !input.trim()}>
+					<Button
+						onClick={handleSend}
+						disabled={
+							sending ||
+							!input.trim() ||
+							(recipientScope === "MEMBERS" && selectedRecipientIds.length === 0)
+						}
+					>
 						{sending ? "Sending..." : "Send"}
 					</Button>
 				</div>

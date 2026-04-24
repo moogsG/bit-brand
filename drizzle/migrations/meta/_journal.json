@@ -176,6 +176,13 @@
       "when": 1776819900000,
       "tag": "0024_implementation_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1776963600000,
+      "tag": "0025_client_message_recipients",
+      "breakpoints": true
     }
   ]
 }

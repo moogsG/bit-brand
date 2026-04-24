@@ -3,7 +3,6 @@ import { eq } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { can } from "@/lib/auth/authorize";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 
@@ -16,10 +15,6 @@ export async function PATCH(req: NextRequest) {
 	const session = await auth();
 	if (!session) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-	}
-
-	if (!can("settings", "edit", { session })) {
-		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
 	try {

@@ -1,8 +1,8 @@
 import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Activity, Building2, Mail, Users } from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/admin-header";
+import { CreateClientDialog } from "@/components/admin/create-client-dialog";
 import {
 	DashboardActivityFeed,
 	type DashboardActivityItem,
@@ -722,12 +722,7 @@ export default async function AdminDashboardPage({
 					<section className="space-y-4">
 						<div className="flex items-center justify-between">
 							<h2 className="text-base font-semibold">Client Overview</h2>
-							<Link
-								href="/admin/clients"
-								className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-							>
-								View all clients →
-							</Link>
+							<CreateClientDialog />
 						</div>
 
 						{filteredDashboardCards.length === 0 ? (
